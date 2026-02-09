@@ -16,7 +16,30 @@ const MODULES = [
 • **Actions** — what moves you can make
 • **Transition Model** — what happens when you take an action
 • **Goal Test** — are we there yet?
-• **Path Cost** — how expensive is this route?`,
+• **Path Cost** — how expensive is this route?
+
+**Tree Search vs Graph Search:**
+• **Tree Search** — may revisit states, simple but can loop infinitely
+• **Graph Search** — tracks an \`explored\` set to avoid revisits, uses more memory but guarantees no loops
+
+\`\`\`python
+# Generic graph search framework
+def graph_search(problem, frontier):
+    frontier.add(problem.initial_state)
+    explored = set()
+
+    while frontier:
+        node = frontier.pop()
+        if problem.goal_test(node.state):
+            return node.solution()
+        explored.add(node.state)
+        for child in node.expand(problem):
+            if child.state not in explored:
+                frontier.add(child)
+    return None  # No solution found
+\`\`\`
+
+The choice of **frontier data structure** determines which algorithm you get: queue → BFS, stack → DFS, priority queue → UCS/A*.`,
         viz: "tree-search"
       },
       {
@@ -28,18 +51,126 @@ const MODULES = [
 • **Optimal** — finds shallowest solution (cheapest if all edges cost the same)
 • **Time & Space** — O(b^d) where b = branching factor, d = depth
 
-BFS is great when all step costs are equal and the solution is near the root.`,
+BFS is great when all step costs are equal and the solution is near the root.
+
+**DFS (Depth-First Search)** uses a **stack** (LIFO) instead. It dives deep before backtracking. Not optimal, not complete on infinite trees, but uses only O(bm) memory — much less than BFS.
+
+\`\`\`python
+from collections import deque
+
+def bfs(graph, start, goal):
+    queue = deque([(start, [start])])
+    visited = {start}
+
+    while queue:
+        node, path = queue.popleft()
+        if node == goal:
+            return path
+        for neighbor in graph[node]:
+            if neighbor not in visited:
+                visited.add(neighbor)
+                queue.append((neighbor, path + [neighbor]))
+    return None
+
+# Example
+graph = {
+    'A': ['B', 'C'],
+    'B': ['D', 'E'],
+    'C': ['F'],
+    'D': [], 'E': ['F'], 'F': []
+}
+print(bfs(graph, 'A', 'F'))  # ['A', 'C', 'F']
+\`\`\`
+
+**Step-by-step BFS trace on the graph above:**
+
+\`\`\`
+Goal: find path from A to F
+
+Step 1: Dequeue A
+  Visit neighbors: B, C
+  Queue: [B, C]    Visited: {A, B, C}
+
+Step 2: Dequeue B
+  Visit neighbors: D, E
+  Queue: [C, D, E]  Visited: {A, B, C, D, E}
+
+Step 3: Dequeue C
+  Visit neighbor: F → GOAL FOUND!
+  Path: A → C → F (depth 2)
+\`\`\`
+
+Notice BFS found the *shallowest* path (2 edges), not necessarily through B. DFS would have gone A→B→D (dead end), backtrack, A→B→E→F (depth 3) — valid but deeper.`,
         viz: "bfs"
       },
       {
         title: "Uniform Cost Search (UCS)",
         content: `UCS is like BFS but for weighted graphs. Instead of expanding the shallowest node, it expands the **cheapest** node first using a **priority queue**.
 
-**Key insight:** UCS always expands the node with the lowest total path cost g(n). It's guaranteed to find the optimal solution.
+**Key insight:** UCS always expands the node with the lowest total path cost \`g(n)\`. It's guaranteed to find the optimal solution.
 
 **Think of it like:** "Always follow the cheapest unexplored path so far."
 
-UCS is equivalent to Dijkstra's algorithm.`,
+UCS is equivalent to Dijkstra's algorithm. BFS is just UCS where every edge costs 1.
+
+\`\`\`python
+import heapq
+
+def ucs(graph, start, goal):
+    # Priority queue: (cost, node, path)
+    frontier = [(0, start, [start])]
+    explored = set()
+
+    while frontier:
+        cost, node, path = heapq.heappop(frontier)
+        if node == goal:
+            return cost, path
+        if node in explored:
+            continue
+        explored.add(node)
+        for neighbor, edge_cost in graph[node]:
+            if neighbor not in explored:
+                heapq.heappush(frontier,
+                    (cost + edge_cost, neighbor,
+                     path + [neighbor]))
+    return None
+
+# Weighted graph example
+graph = {
+    'A': [('B', 1), ('C', 5)],
+    'B': [('C', 2), ('D', 6)],
+    'C': [('D', 2)],
+    'D': []
+}
+print(ucs(graph, 'A', 'D'))
+# (5, ['A', 'B', 'C', 'D'])
+\`\`\`
+
+Note how the path A→B→C→D (cost 5) is cheaper than A→B→D (cost 7) even though it has more steps.
+
+**Step-by-step UCS trace:**
+
+\`\`\`
+Graph: A→B(1), A→C(5), B→C(2), B→D(6), C→D(2)
+
+Step 1: Pop A (cost 0)
+  Push B:1, C:5
+  Frontier: [(1,B), (5,C)]
+
+Step 2: Pop B (cost 1) ← cheapest!
+  Push C:1+2=3, D:1+6=7
+  Frontier: [(3,C), (5,C), (7,D)]
+
+Step 3: Pop C (cost 3) ← via A→B→C
+  Push D:3+2=5
+  Frontier: [(5,C), (5,D), (7,D)]
+
+Step 4: Pop C (cost 5) ← already explored, skip
+
+Step 5: Pop D (cost 5) → GOAL! Path: A→B→C→D
+\`\`\`
+
+**Pitfall:** UCS may explore the same node multiple times with different costs. The \`explored\` set ensures we only process each node at its cheapest cost.`,
         viz: "ucs"
       },
       {
@@ -53,10 +184,101 @@ UCS is equivalent to Dijkstra's algorithm.`,
 
 **Admissible heuristic:** never overestimates the true cost (optimistic). This guarantees A* finds the optimal solution.
 
-**Consistent heuristic:** h(n) ≤ cost(n→n') + h(n'). This means the heuristic obeys the triangle inequality.
+**Consistent heuristic:** h(n) ≤ cost(n→n') + h(n'). This means the heuristic obeys the triangle inequality. Consistency implies admissibility.
 
-A* is optimally efficient — no other optimal algorithm expands fewer nodes.`,
+A* is optimally efficient — no other optimal algorithm expands fewer nodes.
+
+\`\`\`python
+import heapq
+
+def a_star(graph, start, goal, h):
+    # (f_cost, g_cost, node, path)
+    frontier = [(h(start, goal), 0, start, [start])]
+    explored = {}  # node -> best g_cost seen
+
+    while frontier:
+        f, g, node, path = heapq.heappop(frontier)
+        if node == goal:
+            return g, path
+        if node in explored and explored[node] <= g:
+            continue
+        explored[node] = g
+        for nbr, cost in graph[node]:
+            new_g = g + cost
+            new_f = new_g + h(nbr, goal)
+            heapq.heappush(frontier,
+                (new_f, new_g, nbr, path + [nbr]))
+    return None
+
+# Manhattan distance (common for grids)
+def manhattan(a, b):
+    return abs(a[0]-b[0]) + abs(a[1]-b[1])
+\`\`\`
+
+**Why does admissibility matter?** If h(n) overestimates, A* might skip the optimal path thinking it's too expensive. An admissible h(n) ensures we never prematurely dismiss the best route.
+
+**Common heuristics:**
+• **Grid pathfinding** — Manhattan distance (no diagonals) or Euclidean distance
+• **8-puzzle** — number of misplaced tiles, or sum of Manhattan distances per tile
+• **Graph problems** — straight-line distance to goal
+
+**Step-by-step A* trace (using same graph + heuristic):**
+
+\`\`\`
+Graph: A→B(1), A→C(5), B→C(2), B→D(6), C→D(2)
+Heuristic h: A=7, B=6, C=2, D=0
+
+Step 1: Pop A  g=0, h=7, f=0+7=7
+  Push B: f=1+6=7, C: f=5+2=7
+  Frontier: [(7,B), (7,C)]
+
+Step 2: Pop B  g=1, h=6, f=7
+  Push C: f=3+2=5, D: f=7+0=7
+  Frontier: [(5,C), (7,C), (7,D)]
+
+Step 3: Pop C  g=3, h=2, f=5 ← lowest f!
+  Push D: f=5+0=5
+  Frontier: [(5,D), (7,C), (7,D)]
+
+Step 4: Pop D  g=5, f=5 → GOAL! Path: A→B→C→D
+\`\`\`
+
+Notice A* expanded only 4 nodes. UCS expanded 5 (including a duplicate). The heuristic guided A* to explore C (f=5) before D (f=7), finding the optimal path faster.
+
+**Exam tip:** If h(n)=0 for all n, A* becomes UCS. If g(n)=0, A* becomes Greedy Best-First (fast but not optimal).`,
         viz: "astar"
+      },
+      {
+        title: "Search Algorithm Comparison",
+        content: `**When to use which algorithm:**
+
+• **BFS** — all edge costs equal, solution is shallow, you need the shortest path in terms of steps
+• **DFS** — memory is limited, solution is deep, you just need *any* solution (not optimal)
+• **UCS** — edges have different costs, you need the cheapest path, no good heuristic available
+• **A*** — you have a good admissible heuristic, need optimal solution efficiently
+
+**Comparison at a glance:**
+
+\`\`\`
+Algorithm | Frontier   | Complete | Optimal | Time   | Space
+----------|------------|----------|---------|--------|------
+DFS       | Stack      | No*      | No      | O(b^m) | O(bm)
+BFS       | Queue      | Yes      | Yes**   | O(b^d) | O(b^d)
+UCS       | PQ (g)     | Yes      | Yes     | O(b^C) | O(b^C)
+A*        | PQ (g+h)   | Yes      | Yes***  | varies | varies
+
+*  Not complete on infinite/cyclic graphs
+** Optimal only if all step costs are equal
+***Optimal only if h(n) is admissible
+C = optimal cost / minimum edge cost
+\`\`\`
+
+**Common exam pitfalls:**
+• A* with an *inadmissible* heuristic still finds a solution — just not guaranteed optimal
+• UCS and BFS are both complete, but UCS can be very slow if edge costs are tiny (many cheap expansions)
+• Graph search (with explored set) fixes DFS completeness on finite graphs but may miss optimal paths unless the algorithm handles re-expansion (A* with consistent h avoids this)
+• Iterative Deepening DFS (IDS) gives BFS-like completeness with DFS-like memory: O(bd) time, O(bd) space — often the best uninformed strategy`,
+        viz: null
       }
     ]
   },
@@ -75,7 +297,33 @@ A* is optimally efficient — no other optimal algorithm expands fewer nodes.`,
 **Problems with hill climbing:**
 • **Local maxima** — stuck on a small hill, can't see the mountain
 • **Plateaus** — flat areas where no neighbor is better
-• **Ridges** — narrow peaks that are hard to navigate`,
+• **Ridges** — narrow peaks that are hard to navigate
+
+**Random-restart hill climbing** helps escape local maxima — run hill climbing many times from random starting points and keep the best result.
+
+\`\`\`python
+import random
+
+def hill_climbing(problem):
+    current = problem.random_state()
+    while True:
+        neighbors = problem.get_neighbors(current)
+        best = max(neighbors, key=problem.value)
+        if problem.value(best) <= problem.value(current):
+            return current  # Stuck at local max
+        current = best
+
+def random_restart(problem, restarts=100):
+    best = None
+    for _ in range(restarts):
+        result = hill_climbing(problem)
+        if best is None or \\
+           problem.value(result) > problem.value(best):
+            best = result
+    return best
+\`\`\`
+
+**Key tradeoff:** Hill climbing is fast but incomplete. Random restarts improve coverage but don't guarantee the global optimum.`,
         viz: "hill-climbing"
       },
       {
@@ -86,12 +334,69 @@ A* is optimally efficient — no other optimal algorithm expands fewer nodes.`,
 1. Start at a random solution with high "temperature" T
 2. Pick a random neighbor
 3. If better → always accept
-4. If worse → accept with probability e^(ΔE/T)
+4. If worse → accept with probability \`e^(ΔE/T)\`
 5. Gradually reduce T (cooling schedule)
 
 **Key insight:** At high temperature, we explore freely (accept bad moves). As temperature drops, we become pickier and converge to a good solution.
 
-**Guarantee:** With a slow enough cooling schedule, SA will find the global optimum!`,
+**Common cooling schedules:**
+• **Geometric:** \`T = T₀ × α^t\` where α ≈ 0.95–0.99 (most common)
+• **Linear:** \`T = T₀ - α·t\`
+• **Logarithmic:** \`T = T₀ / ln(t+1)\` — guarantees convergence but very slow
+
+\`\`\`python
+import random, math
+
+def simulated_annealing(problem, T=1.0,
+                        cooling=0.995, min_T=1e-8):
+    current = problem.random_state()
+    best = current
+
+    while T > min_T:
+        neighbor = problem.random_neighbor(current)
+        delta = problem.value(neighbor) \\
+                - problem.value(current)
+
+        # Accept better moves always,
+        # worse moves with probability e^(delta/T)
+        if delta > 0 or \\
+           random.random() < math.exp(delta / T):
+            current = neighbor
+
+        if problem.value(current) > \\
+           problem.value(best):
+            best = current
+
+        T *= cooling  # Geometric cooling
+
+    return best
+\`\`\`
+
+**Step-by-step SA trace (maximizing):**
+
+\`\`\`
+T=100, current=5, best=5
+
+Step 1: neighbor=8, Δ=+3 → better, ACCEPT
+  current=8, best=8
+
+Step 2: neighbor=3, Δ=-5 → worse
+  P(accept) = e^(-5/100) = 0.95 → rand=0.2 ACCEPT
+  current=3 (exploring!)
+
+Step 3: neighbor=12, Δ=+9 → better, ACCEPT
+  current=12, best=12  ← escaped local max!
+
+... T cools to 0.1 ...
+
+Step 99: neighbor=11, Δ=-1 → worse
+  P(accept) = e^(-1/0.1) = 0.00005 → REJECT
+  (Too cold — only accept improvements now)
+\`\`\`
+
+**Key insight:** Early on (high T), SA accepted a *worse* move (8→3), which let it discover 12 — a better solution it couldn't reach from 8 directly. This is what makes SA powerful.
+
+**Guarantee:** With a slow enough cooling schedule, SA will find the global optimum! In practice, geometric cooling with α ≈ 0.995 works well.`,
         viz: "annealing"
       },
       {
@@ -99,13 +404,51 @@ A* is optimally efficient — no other optimal algorithm expands fewer nodes.`,
         content: `Inspired by biological evolution! Maintain a **population** of candidate solutions that evolve over generations.
 
 **Steps each generation:**
-1. **Selection** — choose fitter individuals to reproduce
-2. **Crossover** — combine parts of two parents to create children
-3. **Mutation** — randomly modify some children
+1. **Selection** — choose fitter individuals to reproduce (roulette wheel, tournament)
+2. **Crossover** — combine parts of two parents to create children (single-point, uniform)
+3. **Mutation** — randomly modify some children to maintain diversity
 
-**Example — N-Queens:** Represent each solution as a string of column positions. Crossover swaps sections between two parent boards. Mutation moves a random queen.
+**Example — N-Queens:** Represent a board as \`[2,4,1,3]\` where index = row, value = column. Crossover: swap a section between two parents. Mutation: move one queen to a random column.
 
-GAs are good for large, complex search spaces where the structure of good solutions isn't well understood.`,
+\`\`\`python
+import random
+
+def genetic_algorithm(pop, fitness_fn,
+                      crossover_fn, mutate_fn,
+                      gens=1000, mut_rate=0.1):
+    for gen in range(gens):
+        pop.sort(key=fitness_fn, reverse=True)
+        if fitness_fn(pop[0]) == 1.0:
+            return pop[0]  # Perfect solution
+
+        # Top half survive as parents
+        parents = pop[:len(pop)//2]
+        children = list(parents)
+
+        while len(children) < len(pop):
+            p1, p2 = random.sample(parents, 2)
+            child = crossover_fn(p1, p2)
+            if random.random() < mut_rate:
+                child = mutate_fn(child)
+            children.append(child)
+
+        pop = children
+    return max(pop, key=fitness_fn)
+
+# N-Queens crossover: single-point
+def crossover(p1, p2):
+    cut = random.randint(1, len(p1)-1)
+    return p1[:cut] + p2[cut:]
+
+# N-Queens mutation: change one queen
+def mutate(board):
+    b = list(board)
+    i = random.randint(0, len(b)-1)
+    b[i] = random.randint(0, len(b)-1)
+    return b
+\`\`\`
+
+GAs are good for large, complex search spaces where the structure of good solutions isn't well understood. They often find good-enough solutions quickly, even if they can't guarantee optimality.`,
         viz: "genetic"
       }
     ]
@@ -128,7 +471,58 @@ GAs are good for large, complex search spaces where the structure of good soluti
 At MAX nodes: choose the child with **highest** value
 At MIN nodes: choose the child with **lowest** value
 
-**Time complexity:** O(b^m) where b = branching factor, m = max depth`,
+**Time complexity:** O(b^m) where b = branching factor, m = max depth
+
+\`\`\`python
+def minimax(state, depth, is_max, game):
+    if depth == 0 or game.is_terminal(state):
+        return game.evaluate(state), None
+
+    best_move = None
+    if is_max:
+        best_val = float('-inf')
+        for move in game.get_moves(state):
+            child = game.apply(state, move)
+            val, _ = minimax(child, depth-1,
+                             False, game)
+            if val > best_val:
+                best_val, best_move = val, move
+        return best_val, best_move
+    else:
+        best_val = float('inf')
+        for move in game.get_moves(state):
+            child = game.apply(state, move)
+            val, _ = minimax(child, depth-1,
+                             True, game)
+            if val < best_val:
+                best_val, best_move = val, move
+        return best_val, best_move
+\`\`\`
+
+**Step-by-step Minimax trace:**
+
+\`\`\`
+         MAX
+        / | \\
+      MIN MIN MIN
+      /\\  /\\  /\\
+     3 5 2 9 0 7    ← terminal values
+
+Step 1 (bottom-up): MIN nodes pick smallest
+  MIN₁ = min(3,5) = 3
+  MIN₂ = min(2,9) = 2
+  MIN₃ = min(0,7) = 0
+
+Step 2: MAX node picks largest
+  MAX = max(3, 2, 0) = 3
+
+Result: MAX plays left branch, guaranteeing
+at least 3 regardless of MIN's response.
+\`\`\`
+
+**Intuition:** MAX thinks "what's the worst MIN can do to me in each branch?" then picks the branch where the worst case is best. This is the *guaranteed* outcome with optimal play.
+
+**Example:** In tic-tac-toe (b≈5, m=9), minimax explores ~2 million nodes. Chess (b≈35, m≈80) would need ~10^120 — impossible! That's why we need pruning and depth limits.`,
         viz: "minimax"
       },
       {
@@ -141,20 +535,122 @@ At MIN nodes: choose the child with **lowest** value
 
 **Pruning rule:** If α ≥ β, stop exploring that branch — it's irrelevant.
 
-**Best case:** With perfect move ordering, Alpha-Beta examines only O(b^(m/2)) nodes — effectively doubling the search depth!`,
+**Best case:** With perfect move ordering, Alpha-Beta examines only O(b^(m/2)) nodes — effectively doubling the search depth!
+
+\`\`\`python
+def alpha_beta(state, depth, alpha, beta,
+               is_max, game):
+    if depth == 0 or game.is_terminal(state):
+        return game.evaluate(state), None
+
+    best_move = None
+    if is_max:
+        value = float('-inf')
+        for move in game.get_moves(state):
+            child = game.apply(state, move)
+            v, _ = alpha_beta(child, depth-1,
+                alpha, beta, False, game)
+            if v > value:
+                value, best_move = v, move
+            alpha = max(alpha, value)
+            if alpha >= beta:
+                break  # Beta cutoff
+        return value, best_move
+    else:
+        value = float('inf')
+        for move in game.get_moves(state):
+            child = game.apply(state, move)
+            v, _ = alpha_beta(child, depth-1,
+                alpha, beta, True, game)
+            if v < value:
+                value, best_move = v, move
+            beta = min(beta, value)
+            if alpha >= beta:
+                break  # Alpha cutoff
+        return value, best_move
+
+# Usage:
+# val, move = alpha_beta(state, 6,
+#     float('-inf'), float('inf'), True, game)
+\`\`\`
+
+**Step-by-step Alpha-Beta trace:**
+
+\`\`\`
+         MAX (α=-∞, β=+∞)
+        / | \\
+      MIN MIN MIN
+      /\\  /\\  /\\
+     3 5 2 9 0 7
+
+Left branch:
+  MIN₁ sees 3 → β=3. Sees 5 → min(3,5)=3
+  MAX updates α=3
+
+Middle branch:
+  MIN₂ sees 2 → β=2.
+  α(3) ≥ β(2) → PRUNE! Skip 9 ✂️
+  (MAX already has 3; this branch gives ≤2)
+
+Right branch:
+  MIN₃ sees 0 → β=0.
+  α(3) ≥ β(0) → PRUNE! Skip 7 ✂️
+
+Result: MAX=3, but only evaluated 4 of 6 leaves!
+\`\`\`
+
+**Move ordering matters!** If you examine the best move first, pruning is maximized. Common trick: use iterative deepening — search to depth 1, 2, 3… and use each result to order moves at the next depth.
+
+**Common exam pitfalls:**
+• Pruning does NOT change the final minimax value — it only skips irrelevant work
+• α is updated at MAX nodes, β at MIN nodes — don't mix them up
+• Pruning depends on evaluation *order* but the minimax result does not
+• With random ordering: O(b^(3m/4)). With perfect ordering: O(b^(m/2))`,
         viz: "alpha-beta"
       },
       {
         title: "Advanced Game Concepts",
         content: `**Evaluation Functions:** When we can't search to the end, we estimate position quality. Good eval functions capture key features (material, mobility, position).
 
-**Iterative Deepening:** Search deeper and deeper until time runs out. Always have a "best move so far" ready.
+\`\`\`python
+# Simple chess evaluation
+def evaluate(board):
+    values = {'P':1,'N':3,'B':3,'R':5,'Q':9,'K':0}
+    score = sum(values[p.type]
+                for p in board.white_pieces)
+    score -= sum(values[p.type]
+                 for p in board.black_pieces)
+    return score  # Positive = white advantage
+\`\`\`
+
+**Iterative Deepening:** Search depth 1, 2, 3… until time runs out. Always have a "best move so far" ready. Also helps with move ordering for alpha-beta.
 
 **Quiescent Search:** Don't evaluate "noisy" positions (e.g., mid-capture in chess). Extend search until the position is quiet.
 
-**Horizon Effect:** Limited depth can cause the AI to delay inevitable bad outcomes by pushing them beyond the search horizon.
+**Horizon Effect:** Limited depth can cause the AI to delay inevitable bad outcomes by pushing them beyond the search horizon. Example: sacrificing pieces to push checkmate past the depth limit.
 
-**Expectimax:** For games with chance (dice, cards), add "chance nodes" that average over possible outcomes.`,
+**Expectimax:** For games with chance (dice, cards), replace MIN nodes with **chance nodes** that compute the weighted average over possible outcomes.
+
+\`\`\`python
+def expectimax(state, depth, agent, game):
+    if depth == 0 or game.is_terminal(state):
+        return game.evaluate(state)
+
+    if agent == 'max':
+        return max(
+            expectimax(game.apply(state, m),
+                       depth-1, 'chance', game)
+            for m in game.get_moves(state))
+    else:  # Chance node
+        moves = game.get_moves(state)
+        return sum(
+            (1/len(moves)) *
+            expectimax(game.apply(state, m),
+                       depth-1, 'max', game)
+            for m in moves)
+\`\`\`
+
+**Key difference:** Alpha-beta pruning does NOT work with Expectimax because chance nodes need all children to compute the expected value.`,
         viz: null
       }
     ]
@@ -176,7 +672,34 @@ At MIN nodes: choose the child with **lowest** value
 
 CSPs are everywhere: scheduling, Sudoku, circuit layout, resource allocation.
 
-**Constraint Graph:** Variables are nodes, edges connect variables that share a constraint.`,
+**Constraint Graph:** Variables are nodes, edges connect variables that share a constraint.
+
+**Simple CSP Backtracking Solver:**
+
+\`\`\`python
+def backtrack(assignment, csp):
+    if len(assignment) == len(csp.variables):
+        return assignment  # All variables assigned
+
+    var = select_unassigned_variable(csp, assignment)
+    for value in csp.domains[var]:
+        if is_consistent(var, value, assignment, csp):
+            assignment[var] = value
+            result = backtrack(assignment, csp)
+            if result is not None:
+                return result
+            del assignment[var]  # Backtrack
+    return None
+
+def is_consistent(var, value, assignment, csp):
+    for neighbor in csp.neighbors[var]:
+        if neighbor in assignment:
+            if assignment[neighbor] == value:
+                return False
+    return True
+\`\`\`
+
+**Common Exam Pitfall:** Remember that basic backtracking tries values in domain order and variables in arbitrary order. Without heuristics, it's exponential!`,
         viz: "csp-map"
       },
       {
@@ -189,7 +712,59 @@ CSPs are everywhere: scheduling, Sudoku, circuit layout, resource allocation.
 • **MRV (Minimum Remaining Values)** — choose the variable with fewest legal values next ("most constrained first")
 • **LCV (Least Constraining Value)** — try the value that rules out the fewest options for neighbors
 
-These heuristics can turn exponential problems into near-linear ones!`,
+These heuristics can turn exponential problems into near-linear ones!
+
+**Step-by-step trace — Map coloring with Forward Checking:**
+
+Regions: \`WA, NT, SA, Q\` (Western Australia, Northern Territory, South Australia, Queensland)
+Domains: \`{R, G, B}\` for each region
+Constraints: Adjacent regions ≠ same color
+
+\`\`\`
+Step 1: Assign WA=R
+  Forward check: NT domain becomes {G,B}, SA domain becomes {G,B}
+
+Step 2: Pick NT (arbitrary), assign NT=G
+  Forward check: SA domain becomes {B} (can't be R or G)
+
+Step 3: Assign SA=B
+  Forward check: Q domain becomes {R,G}
+
+Step 4: Assign Q=R (or G, both work)
+  Solution found: {WA:R, NT:G, SA:B, Q:R}
+\`\`\`
+
+**AC-3 Algorithm (Arc Consistency):**
+
+\`\`\`python
+def ac3(csp):
+    queue = [(Xi, Xj) for Xi in csp.variables
+                      for Xj in csp.neighbors[Xi]]
+    while queue:
+        (Xi, Xj) = queue.pop(0)
+        if revise(csp, Xi, Xj):
+            if len(csp.domains[Xi]) == 0:
+                return False  # No solution
+            for Xk in csp.neighbors[Xi]:
+                if Xk != Xj:
+                    queue.append((Xk, Xi))
+    return True
+
+def revise(csp, Xi, Xj):
+    revised = False
+    for x in csp.domains[Xi][:]:
+        if not any(is_compatible(x, y, Xi, Xj)
+                   for y in csp.domains[Xj]):
+            csp.domains[Xi].remove(x)
+            revised = True
+    return revised
+\`\`\`
+
+**Exam Tips:**
+• **MRV vs LCV:** MRV picks which variable to assign next (most constrained), LCV picks which value to try first (least constraining). Don't confuse them!
+• **Degree Heuristic:** When multiple variables have same MRV count, pick the one with most constraints on unassigned variables
+• **Forward Checking vs AC-3:** FC only checks neighbors of assigned variable. AC-3 propagates further, checking consistency across all arcs
+• **Local Search for CSPs:** Methods like min-conflicts can be faster for large problems but don't guarantee finding a solution`,
         viz: "backtracking"
       }
     ]
@@ -212,7 +787,56 @@ These heuristics can turn exponential problems into near-linear ones!`,
 
 **Independence:** A and B are independent if P(A|B) = P(A), meaning knowing B tells you nothing about A.
 
-**Total Probability:** P(A) = Σ P(A|B=b) × P(B=b) — sum over all possible values of B`,
+**Total Probability:** P(A) = Σ P(A|B=b) × P(B=b) — sum over all possible values of B
+
+**Worked Example — Conditional Probability:**
+
+Two dice are rolled. Given that the sum is greater than 8, what's the probability that both dice show the same number?
+
+\`\`\`
+Event A = both dice same = {(1,1), (2,2), (3,3), (4,4), (5,5), (6,6)}
+Event B = sum > 8 = {(3,6),(4,5),(4,6),(5,4),(5,5),(5,6),(6,3),(6,4),(6,5),(6,6)}
+
+A ∧ B = {(5,5), (6,6)} (2 outcomes)
+|B| = 10 outcomes
+
+P(A|B) = |A ∧ B| / |B| = 2/10 = 0.2
+\`\`\`
+
+**Bayes Computation in Python:**
+
+\`\`\`python
+def bayes(prior_A, likelihood_B_given_A, prob_B):
+    """Compute P(A|B) using Bayes' Rule"""
+    return (likelihood_B_given_A * prior_A) / prob_B
+
+# Example: Medical test
+prior_disease = 0.01
+sensitivity = 0.9  # P(positive | disease)
+prob_positive = 0.9 * 0.01 + 0.2 * 0.99  # Total probability
+
+posterior = bayes(prior_disease, sensitivity, prob_positive)
+print(f"P(disease | positive test) = {posterior:.4f}")
+# Output: 0.0435 (4.35%)
+\`\`\`
+
+**Computing Total Probability:**
+
+\`\`\`python
+def total_probability(events, probs, conditional_probs):
+    """P(A) = Σ P(A|B_i) × P(B_i)"""
+    return sum(conditional_probs[i] * probs[i]
+               for i in range(len(events)))
+
+# Example: Rain probability given weather forecast
+weather = ['Sunny', 'Cloudy', 'Stormy']
+prob_weather = [0.6, 0.3, 0.1]
+prob_rain_given = [0.1, 0.5, 0.9]
+
+prob_rain = total_probability(weather, prob_weather,
+                               prob_rain_given)
+print(f"P(Rain) = {prob_rain}")  # 0.6*0.1 + 0.3*0.5 + 0.1*0.9 = 0.3
+\`\`\``,
         viz: "probability"
       },
       {
@@ -232,7 +856,48 @@ What's P(Cancer | Positive)?
 
 Using Bayes: P(C|+) = (0.9 × 0.01) / (0.9×0.01 + 0.2×0.99) = 0.009 / 0.207 ≈ **4.3%**
 
-Even with a positive test, cancer is unlikely because the base rate is so low! This is why prior probabilities matter.`,
+Even with a positive test, cancer is unlikely because the base rate is so low! This is why prior probabilities matter.
+
+**Step-by-step Cancer Screening Calculation:**
+
+\`\`\`
+Given:
+  P(C) = 0.01          (prior: 1% have cancer)
+  P(¬C) = 0.99         (99% don't have cancer)
+  P(+|C) = 0.9         (sensitivity: test detects 90% of cancers)
+  P(+|¬C) = 0.2        (false positive: 20% of healthy get positive)
+
+Step 1: Calculate P(+) using total probability
+  P(+) = P(+|C)×P(C) + P(+|¬C)×P(¬C)
+  P(+) = 0.9×0.01 + 0.2×0.99
+  P(+) = 0.009 + 0.198
+  P(+) = 0.207
+
+Step 2: Apply Bayes' Rule
+  P(C|+) = P(+|C) × P(C) / P(+)
+  P(C|+) = (0.9 × 0.01) / 0.207
+  P(C|+) = 0.009 / 0.207
+  P(C|+) ≈ 0.0435 = 4.35%
+
+Interpretation:
+Out of 10,000 people:
+  - 100 have cancer (1%)
+    → 90 test positive (90% sensitivity)
+    → 10 test negative (false negatives)
+  - 9,900 don't have cancer
+    → 1,980 test positive (20% false positive rate)
+    → 7,920 test negative
+
+Total positive tests: 90 + 1,980 = 2,070
+Of those, truly have cancer: 90
+Probability: 90/2,070 ≈ 4.35%
+\`\`\`
+
+**Exam Pitfalls:**
+• **Base Rate Fallacy:** Don't ignore \`P(A)\` — even a good test is unreliable if the condition is rare!
+• **Independence vs Conditional Independence:** \`A\` and \`B\` can be dependent but conditionally independent given \`C\`. Example: Fire and Smoke are dependent, but given FireAlarm, they become independent (both caused by alarm state)
+• **Confusing P(A|B) with P(B|A):** These are NOT the same! P(positive|cancer) ≠ P(cancer|positive)
+• **Forgetting to normalize:** When computing posteriors, sum must equal 1. Use P(B) = Σ P(B|Ai)P(Ai) to normalize`,
         viz: "bayes"
       }
     ]
@@ -254,7 +919,50 @@ Even with a positive test, cancer is unlikely because the base rate is so low! T
 
 **Compact representation:** Instead of storing the full joint distribution (2^n values for n binary variables), we only need local CPTs.
 
-Example: Weather → Sprinkler, Weather → Rain, Sprinkler → WetGrass, Rain → WetGrass`,
+Example: Weather → Sprinkler, Weather → Rain, Sprinkler → WetGrass, Rain → WetGrass
+
+**Representing a Simple Bayes Net in Python:**
+
+\`\`\`python
+# Simple network: Cloudy → Rain, Cloudy → Sprinkler,
+#                 Rain → WetGrass, Sprinkler → WetGrass
+
+class BayesNet:
+    def __init__(self):
+        # CPT for Cloudy (no parents)
+        self.P_Cloudy = 0.5
+
+        # CPT for Rain given Cloudy
+        self.P_Rain = {
+            True: 0.8,   # P(Rain | Cloudy)
+            False: 0.2   # P(Rain | ¬Cloudy)
+        }
+
+        # CPT for Sprinkler given Cloudy
+        self.P_Sprinkler = {
+            True: 0.1,   # P(Sprinkler | Cloudy)
+            False: 0.5   # P(Sprinkler | ¬Cloudy)
+        }
+
+        # CPT for WetGrass given Rain and Sprinkler
+        self.P_WetGrass = {
+            (True, True): 0.99,    # P(Wet | Rain ∧ Sprinkler)
+            (True, False): 0.9,    # P(Wet | Rain ∧ ¬Sprinkler)
+            (False, True): 0.9,    # P(Wet | ¬Rain ∧ Sprinkler)
+            (False, False): 0.0    # P(Wet | ¬Rain ∧ ¬Sprinkler)
+        }
+
+    def joint_prob(self, cloudy, rain, sprinkler, wet):
+        """Compute joint probability using chain rule"""
+        p = self.P_Cloudy if cloudy else (1 - self.P_Cloudy)
+        p *= self.P_Rain[cloudy] if rain else (1 - self.P_Rain[cloudy])
+        p *= self.P_Sprinkler[cloudy] if sprinkler else (1 - self.P_Sprinkler[cloudy])
+        p *= self.P_WetGrass[(rain, sprinkler)] if wet else (1 - self.P_WetGrass[(rain, sprinkler)])
+        return p
+
+# Full joint would need 2^4 = 16 entries
+# Bayes Net needs: 1 + 2 + 2 + 4 = 9 parameters!
+\`\`\``,
         viz: "bayesnet"
       },
       {
@@ -270,7 +978,48 @@ A and C are independent given B. (The common cause explains the correlation)
 **Collider (V-structure): A → B ← C**
 A and C are independent UNLESS B (or its descendant) is observed. Observing B "opens" the path! This is called **explaining away**.
 
-**Explaining away example:** If the grass is wet (observed), learning it rained makes it LESS likely the sprinkler was on.`,
+**Explaining away example:** If the grass is wet (observed), learning it rained makes it LESS likely the sprinkler was on.
+
+**Step-by-step D-Separation Check:**
+
+Network: \`Burglary → Alarm ← Earthquake\`, \`Alarm → JohnCalls\`, \`Alarm → MaryCalls\`
+
+\`\`\`
+Query 1: Are Burglary and Earthquake independent?
+  Path: Burglary → Alarm ← Earthquake
+  Pattern: Collider at Alarm
+  Alarm not observed → Path BLOCKED
+  Answer: YES, they are independent
+
+Query 2: Are Burglary and Earthquake independent given Alarm?
+  Path: Burglary → Alarm ← Earthquake
+  Pattern: Collider at Alarm
+  Alarm IS observed → Path ACTIVE (explaining away!)
+  Answer: NO, dependent given Alarm
+
+Query 3: Are JohnCalls and MaryCalls independent given Alarm?
+  Path: JohnCalls ← Alarm → MaryCalls
+  Pattern: Fork at Alarm
+  Alarm IS observed → Path BLOCKED
+  Answer: YES, independent given Alarm
+
+Query 4: Are Burglary and JohnCalls independent?
+  Path: Burglary → Alarm → JohnCalls
+  Pattern: Chain through Alarm
+  Alarm not observed → Path ACTIVE
+  Answer: NO, they are dependent
+\`\`\`
+
+**Exam Tips:**
+• **Markov Blanket:** A node is conditionally independent of ALL other nodes given its Markov blanket (parents + children + children's other parents)
+• **Active vs Blocked Paths:** A path is active if:
+  - For chains/forks: middle node NOT observed
+  - For colliders: middle node (or descendant) IS observed
+• **Multiple Paths:** If ANY path is active, variables are dependent
+• **D-separation algorithm:** To test if X ⊥ Y | Z:
+  1. Find all undirected paths from X to Y
+  2. Check if ALL paths are blocked by Z
+  3. If yes → independent; if any active → dependent`,
         viz: "dsep"
       },
       {
@@ -282,7 +1031,92 @@ A and C are independent UNLESS B (or its descendant) is observed. Observing B "o
 **Approximate Inference:**
 • **Rejection Sampling** — generate samples from the full network, keep only those matching evidence. Simple but wasteful.
 • **Likelihood Weighting** — fix evidence variables, weight samples by probability of evidence. More efficient!
-• **Gibbs Sampling** — start with random values, repeatedly resample one variable at a time conditioned on its Markov blanket. A form of MCMC.`,
+• **Gibbs Sampling** — start with random values, repeatedly resample one variable at a time conditioned on its Markov blanket. A form of MCMC.
+
+**Variable Elimination Example (Python):**
+
+Network: \`Cloudy → Rain → WetGrass\`
+
+Query: P(WetGrass | Cloudy=True)
+
+\`\`\`python
+def variable_elimination(query_var, evidence, bn):
+    """
+    Compute P(query_var | evidence) using VE
+    """
+    # Step 1: Create initial factors from CPTs
+    factors = []
+    for var in bn.variables:
+        if var in evidence:
+            # Fix evidence variables
+            factor = bn.get_cpt(var, evidence)
+        else:
+            factor = bn.get_cpt(var)
+        factors.append(factor)
+
+    # Step 2: Eliminate hidden variables (not query, not evidence)
+    hidden = [v for v in bn.variables
+              if v != query_var and v not in evidence]
+
+    for var in hidden:
+        # Find all factors mentioning var
+        relevant = [f for f in factors if var in f.vars]
+        factors = [f for f in factors if var not in f.vars]
+
+        # Multiply them together
+        product = multiply_factors(relevant)
+
+        # Sum out (marginalize) var
+        marginalized = sum_out(product, var)
+        factors.append(marginalized)
+
+    # Step 3: Multiply remaining factors
+    result = multiply_factors(factors)
+
+    # Step 4: Normalize
+    return normalize(result)
+
+# Trace on small network:
+# P(WetGrass | Cloudy=True)
+#
+# Factors: f1(Cloudy), f2(Rain|Cloudy), f3(Wet|Rain)
+# Evidence: Cloudy=True → fix f1
+#
+# Eliminate Rain:
+#   Join f2 and f3 → f4(Cloudy, Rain, Wet)
+#   Sum out Rain → f5(Cloudy, Wet)
+#
+# Result: f5 with Cloudy=True gives P(Wet)
+\`\`\`
+
+**Rejection Sampling Trace:**
+
+Query: P(Rain | WetGrass=true, Cloudy=false)
+
+\`\`\`
+Sample 1: Cloudy=T, Rain=T, Wet=T → REJECT (Cloudy≠false)
+Sample 2: Cloudy=F, Rain=F, Wet=F → REJECT (Wet≠true)
+Sample 3: Cloudy=F, Rain=T, Wet=T → ACCEPT ✓
+Sample 4: Cloudy=T, Rain=F, Wet=F → REJECT (Cloudy≠false)
+Sample 5: Cloudy=F, Rain=F, Wet=F → REJECT (Wet≠true)
+Sample 6: Cloudy=F, Rain=T, Wet=T → ACCEPT ✓
+Sample 7: Cloudy=F, Rain=F, Wet=T → ACCEPT ✓ (sprinkler caused it)
+...
+
+After 1000 samples: 37 accepted
+  - 24 had Rain=true
+  - 13 had Rain=false
+Estimate: P(Rain|Wet,¬Cloudy) ≈ 24/37 = 0.65
+
+Problem: Rejection rate = 96.3% → very wasteful!
+\`\`\`
+
+**Exam Tips:**
+• **VE Complexity:** Depends on elimination order. Bad order → huge intermediate factors. Good order → exponential speedup!
+• **Rejection Sampling:** Wasteful when evidence is unlikely. Many samples rejected.
+• **Likelihood Weighting:** Better than rejection — fixes evidence variables during sampling, weights by P(evidence). No rejection!
+• **Gibbs Sampling:** MCMC method. Initial samples biased, but converges to correct distribution. Each iteration only resamples one variable given Markov blanket.
+• **When to use approximate:** Large networks where exact inference intractable (too many variables, high treewidth)`,
         viz: null
       }
     ]
@@ -303,7 +1137,31 @@ A and C are independent UNLESS B (or its descendant) is observed. Observing B "o
 • **Cross-validation** — split data into folds, train on some, test on others to find the best k
 
 **Pros:** No training needed, works for any shape of decision boundary
-**Cons:** Slow at prediction time (must search all data), sensitive to irrelevant features, curse of dimensionality`,
+**Cons:** Slow at prediction time (must search all data), sensitive to irrelevant features, curse of dimensionality
+
+**Python Implementation:**
+\`\`\`python
+import numpy as np
+from collections import Counter
+
+def knn_classify(train_X, train_y, test_point, k=3):
+    distances = np.sqrt(np.sum((train_X - test_point)**2, axis=1))
+    nearest_indices = np.argsort(distances)[:k]
+    nearest_labels = train_y[nearest_indices]
+    return Counter(nearest_labels).most_common(1)[0][0]
+\`\`\`
+
+**Trace: Classifying (5,4) with k=3:**
+\`\`\`
+Training: (1,2)->A (2,3)->A (3,3)->A (6,5)->B (7,7)->B (8,6)->B
+Distances: (6,5)->1.41 (3,3)->2.24 (2,3)->3.16 (7,7)->3.61 ...
+3 nearest: B, A, A → Vote: 2A, 1B → Predict A
+\`\`\`
+
+**Exam Pitfalls:**
+• Feature scaling crucial—normalize first!
+• Odd k avoids ties; use cross-validation
+• Curse of dimensionality: high-D → all points equidistant`,
         viz: "knn"
       },
       {
@@ -316,7 +1174,59 @@ A and C are independent UNLESS B (or its descendant) is observed. Observing B "o
 
 P(Class | Features) ∝ P(Class) × Π P(Feature_i | Class)
 
-**Why it works:** Even if the independence assumption is wrong, the resulting classifier often ranks probabilities correctly.`,
+**Why it works:** Even if the independence assumption is wrong, the resulting classifier often ranks probabilities correctly.
+
+**Python Implementation:**
+\`\`\`python
+class NaiveBayes:
+    def __init__(self):
+        self.class_probs = {}
+        self.feature_probs = {}
+
+    def train(self, X, y):
+        classes, counts = np.unique(y, return_counts=True)
+        self.class_probs = dict(zip(classes, counts / len(y)))
+
+        for c in classes:
+            X_c = X[y == c]
+            self.feature_probs[c] = {}
+            for i in range(X.shape[1]):
+                vals, counts = np.unique(X_c[:, i], return_counts=True)
+                # Laplace smoothing: add 1 to all counts
+                self.feature_probs[c][i] = dict(zip(vals, (counts+1)/(len(X_c)+len(vals))))
+
+    def predict(self, x):
+        scores = {}
+        for c in self.class_probs:
+            score = self.class_probs[c]
+            for i, val in enumerate(x):
+                score *= self.feature_probs[c][i].get(val, 1/len(self.feature_probs[c][i]))
+            scores[c] = score
+        return max(scores, key=scores.get)
+\`\`\`
+
+**Example: Email spam classification**
+\`\`\`
+Training data:
+  Email 1: "buy now"    -> Spam
+  Email 2: "meeting now" -> Ham
+  Email 3: "buy cheap"   -> Spam
+
+Classify: "buy meeting"
+
+P(Spam) = 2/3,  P(Ham) = 1/3
+P("buy"|Spam) = 2/2 = 1.0,  P("buy"|Ham) = 0/1 = 0 (Laplace: 1/4)
+P("meeting"|Spam) = 0/2 = 0 (Laplace: 1/4),  P("meeting"|Ham) = 1/1 = 1.0
+
+P(Spam|"buy meeting") ∝ (2/3) × 1.0 × (1/4) = 0.167
+P(Ham|"buy meeting")  ∝ (1/3) × (1/4) × 1.0 = 0.083
+→ Predict Spam
+\`\`\`
+
+**Exam Tips:**
+• Laplace smoothing: add 1 to counts to avoid zero probabilities
+• Log probabilities prevent underflow: log(P) = log(prior) + Σ log(P(f|c))
+• Independence assumption rarely holds, but ranking often correct`,
         viz: "gaussian"
       },
       {
@@ -334,7 +1244,55 @@ Use **Information Gain** = how much entropy decreases after the split.
 • **Pruning** — remove branches that don't help on validation data
 • **Minimum Description Length** — prefer simpler trees
 • **Random Forests** — build many trees on random subsets, take a vote
-• **Boosting** — build trees sequentially, focusing on mistakes`,
+• **Boosting** — build trees sequentially, focusing on mistakes
+
+**Python: Entropy & Information Gain**
+\`\`\`python
+import numpy as np
+
+def entropy(y):
+    _, counts = np.unique(y, return_counts=True)
+    probs = counts / len(y)
+    return -np.sum(probs * np.log2(probs + 1e-10))
+
+def information_gain(X_col, y):
+    parent_entropy = entropy(y)
+    values, counts = np.unique(X_col, return_counts=True)
+    weighted_entropy = 0
+    for v, count in zip(values, counts):
+        subset_y = y[X_col == v]
+        weighted_entropy += (count / len(y)) * entropy(subset_y)
+    return parent_entropy - weighted_entropy
+\`\`\`
+
+**Building Tree Example:**
+\`\`\`
+Dataset:
+  Outlook  Temp   Play?
+  Sunny    Hot    No
+  Sunny    Cool   Yes
+  Rain     Cool   Yes
+  Rain     Hot    No
+
+Initial entropy: H = -(2/4)log₂(2/4) - (2/4)log₂(2/4) = 1.0
+
+Split on Outlook:
+  Sunny: [No, Yes] → H=1.0
+  Rain:  [Yes, No] → H=1.0
+  IG(Outlook) = 1.0 - (2/4)(1.0) - (2/4)(1.0) = 0.0
+
+Split on Temp:
+  Hot:  [No, No] → H=0.0
+  Cool: [Yes, Yes] → H=0.0
+  IG(Temp) = 1.0 - (2/4)(0.0) - (2/4)(0.0) = 1.0 ✓ Best!
+
+Choose Temp for root split
+\`\`\`
+
+**Exam Tips:**
+• IG = H(parent) - Weighted_Avg(H(children))
+• Always compute weighted average (by subset size)
+• Gini impurity alternative: 1 - Σ p_i²`,
         viz: "decision-tree"
       },
       {
@@ -352,7 +1310,60 @@ Use **Information Gain** = how much entropy decreases after the split.
 2. Compute error at output
 3. Backward pass — propagate error and adjust weights using gradient descent
 
-**Deep Learning:** Many hidden layers can learn hierarchical features (edges → shapes → objects).`,
+**Deep Learning:** Many hidden layers can learn hierarchical features (edges → shapes → objects).
+
+**Python: Simple Perceptron**
+\`\`\`python
+class Perceptron:
+    def __init__(self, n_features):
+        self.weights = np.zeros(n_features)
+        self.bias = 0
+
+    def predict(self, x):
+        activation = np.dot(self.weights, x) + self.bias
+        return 1 if activation >= 0 else 0
+
+    def train(self, X, y, lr=0.1, epochs=100):
+        for _ in range(epochs):
+            for xi, yi in zip(X, y):
+                pred = self.predict(xi)
+                error = yi - pred
+                self.weights += lr * error * xi
+                self.bias += lr * error
+\`\`\`
+
+**Why XOR Fails with Single Perceptron:**
+\`\`\`
+XOR truth table:
+  (0,0) → 0    (0,1) → 1
+  (1,0) → 1    (1,1) → 0
+
+Try to find line w₁x₁ + w₂x₂ + b = 0 separating:
+  Class 0: (0,0), (1,1)  vs  Class 1: (0,1), (1,0)
+
+No single line can separate these!
+XOR requires 2-layer network:
+  Hidden: h₁ = AND, h₂ = OR
+  Output: (h₂ AND NOT h₁) = XOR
+\`\`\`
+
+**Gradient Descent Trace (1 step):**
+\`\`\`
+Input x=[1,1], target y=1, weights w=[0.5,0.3], bias b=0.1
+
+Forward: activation = 0.5(1) + 0.3(1) + 0.1 = 0.9 → output=1 ✓
+Error = 1-1 = 0 (no update needed)
+
+If target was 0: Error = 0-1 = -1
+Update: w₁ = 0.5 + 0.1(-1)(1) = 0.4
+        w₂ = 0.3 + 0.1(-1)(1) = 0.2
+        b  = 0.1 + 0.1(-1) = 0.0
+\`\`\`
+
+**Exam Tips:**
+• Perceptron: only linearly separable problems
+• Learning rate too high → oscillation; too low → slow
+• Activation functions: sigmoid, tanh, ReLU (ReLU avoids vanishing gradients)`,
         viz: "neural-net"
       }
     ]
@@ -371,7 +1382,55 @@ Use **Information Gain** = how much entropy decreases after the split.
 
 **DTW** finds the optimal alignment between two sequences by warping the time axis. It builds a cost matrix and finds the minimum-cost path from corner to corner.
 
-**Sakoe-Chiba Band:** Constrains the warping path to stay near the diagonal, preventing extreme distortions.`,
+**Sakoe-Chiba Band:** Constrains the warping path to stay near the diagonal, preventing extreme distortions.
+
+**Python: DTW Algorithm**
+\`\`\`python
+import numpy as np
+
+def dtw(seq1, seq2):
+    n, m = len(seq1), len(seq2)
+    # Initialize cost matrix with infinity
+    cost = np.full((n+1, m+1), np.inf)
+    cost[0,0] = 0
+
+    for i in range(1, n+1):
+        for j in range(1, m+1):
+            distance = abs(seq1[i-1] - seq2[j-1])
+            cost[i,j] = distance + min(
+                cost[i-1,j],    # insertion
+                cost[i,j-1],    # deletion
+                cost[i-1,j-1]   # match
+            )
+    return cost[n,m]
+\`\`\`
+
+**DTW Trace Example:**
+\`\`\`
+Seq1: [1, 2, 3]
+Seq2: [1, 2, 2, 3]
+
+Cost matrix:
+       ∅   1   2   2   3
+    ∅  0  ∞  ∞  ∞  ∞
+    1  ∞  0  1  2  3
+    2  ∞  1  1  1  2
+    3  ∞  2  2  2  1
+
+Optimal path (arrows):
+  (0,0)→(1,1)→(2,2)→(2,3)→(3,4)
+  Match 1-1, 2-2, skip, 3-3
+  Total cost: 1
+
+Euclidean would give: |3-4|=1, different length error!
+DTW handles time warp elegantly.
+\`\`\`
+
+**Exam Tips:**
+• DTW complexity: O(nm) time and space
+• Sakoe-Chiba band reduces to O(nw) where w=window width
+• DTW vs Euclidean: DTW allows temporal alignment
+• Asymmetric: dtw(A,B) may align differently than dtw(B,A)`,
         viz: "dtw"
       },
       {
@@ -388,7 +1447,64 @@ Use **Information Gain** = how much entropy decreases after the split.
 **Three key problems:**
 1. **Evaluation** — P(observations | model) → Forward algorithm
 2. **Decoding** — most likely state sequence → **Viterbi algorithm**
-3. **Learning** — find best model parameters → **Baum-Welch** (EM algorithm)`,
+3. **Learning** — find best model parameters → **Baum-Welch** (EM algorithm)
+
+**Python: Forward & Viterbi**
+\`\`\`python
+def forward(obs, states, start_p, trans_p, emit_p):
+    alpha = [{s: start_p[s] * emit_p[s][obs[0]] for s in states}]
+    for t in range(1, len(obs)):
+        alpha.append({})
+        for s in states:
+            alpha[t][s] = sum(alpha[t-1][s0] * trans_p[s0][s]
+                              for s0 in states) * emit_p[s][obs[t]]
+    return sum(alpha[-1].values())
+
+def viterbi(obs, states, start_p, trans_p, emit_p):
+    V = [{s: start_p[s] * emit_p[s][obs[0]] for s in states}]
+    path = {s: [s] for s in states}
+    for t in range(1, len(obs)):
+        V.append({}); new_path = {}
+        for s in states:
+            probs = [(V[t-1][s0] * trans_p[s0][s] * emit_p[s][obs[t]], s0)
+                     for s0 in states]
+            max_prob, max_state = max(probs)
+            V[t][s] = max_prob
+            new_path[s] = path[max_state] + [s]
+        path = new_path
+    return max(V[-1], key=V[-1].get), path[max(V[-1], key=V[-1].get)]
+\`\`\`
+
+**Viterbi Trace: Weather/Umbrella**
+\`\`\`
+States: Rainy(R), Sunny(S)
+Observations: Umbrella(U), No-umbrella(N)
+Start: P(R)=0.6, P(S)=0.4
+Transition: P(R|R)=0.7, P(S|R)=0.3, P(R|S)=0.4, P(S|S)=0.6
+Emission: P(U|R)=0.9, P(U|S)=0.2
+
+Obs: [U, U, N]
+
+t=0 (U):
+  V[R] = 0.6 × 0.9 = 0.54
+  V[S] = 0.4 × 0.2 = 0.08
+
+t=1 (U):
+  V[R] = max(0.54×0.7, 0.08×0.4) × 0.9 = 0.34
+  V[S] = max(0.54×0.3, 0.08×0.6) × 0.2 = 0.03
+
+t=2 (N):
+  V[R] = max(0.34×0.7, 0.03×0.4) × 0.1 = 0.024
+  V[S] = max(0.34×0.3, 0.03×0.6) × 0.8 = 0.08 ✓
+
+Best path: R → R → S
+\`\`\`
+
+**Exam Tips:**
+• Forward: sum over all paths; Viterbi: max over paths
+• Both use DP, O(T×N²) where T=time steps, N=states
+• Baum-Welch: EM algorithm, iteratively improves parameters
+• HMM assumes Markov property: future depends only on current state`,
         viz: "hmm"
       }
     ]
@@ -411,7 +1527,54 @@ Use **Information Gain** = how much entropy decreases after the split.
 • **Parameter sharing** — same filter used everywhere = far fewer parameters
 • **Hierarchical features** — early layers detect edges, later layers detect complex objects
 
-**Residual Networks (ResNets):** Add "skip connections" that let gradients flow directly through the network, enabling training of very deep networks (100+ layers).`,
+**Residual Networks (ResNets):** Add "skip connections" that let gradients flow directly through the network, enabling training of very deep networks (100+ layers).
+
+**Python: Convolution Operation**
+\`\`\`python
+def convolve2d(image, kernel):
+    k_h, k_w = kernel.shape
+    i_h, i_w = image.shape
+    out_h, out_w = i_h - k_h + 1, i_w - k_w + 1
+    output = np.zeros((out_h, out_w))
+
+    for i in range(out_h):
+        for j in range(out_w):
+            patch = image[i:i+k_h, j:j+k_w]
+            output[i,j] = np.sum(patch * kernel)
+    return output
+\`\`\`
+
+**Convolution Trace:**
+\`\`\`
+Input (4×4):          Kernel (3×3):
+  1 2 3 0              1  0 -1
+  0 1 2 1              1  0 -1
+  1 0 1 2              1  0 -1
+  2 1 0 1
+
+Output (2×2):
+  Position (0,0): [1,2,3][0,1,2][1,0,1] ⊙ kernel
+    = 1×1 + 2×0 + 3×(-1) + 0×1 + 1×0 + 2×(-1) + 1×1 + 0×0 + 1×(-1)
+    = 1 + 0 - 3 + 0 + 0 - 2 + 1 + 0 - 1 = -4
+
+  After all positions: [-4, -2]
+                       [-2, -1]
+
+Max pooling (2×2): [-1] (takes max from 2×2 output)
+\`\`\`
+
+**Parameter Counting:**
+Conv layer with 64 filters of size 3×3×3 (RGB):
+  Params = 64 × (3×3×3 + 1) = 64 × 28 = 1,792
+
+Fully connected 128→10:
+  Params = 128×10 + 10 = 1,290
+
+**Exam Tips:**
+• Stride s: output size = (input - kernel + 2×padding) / s + 1
+• Padding preserves spatial dimensions
+• Pooling adds translation invariance, no learnable params
+• ResNets solve vanishing gradients via skip connections`,
         viz: "cnn"
       },
       {
@@ -427,7 +1590,33 @@ Use **Information Gain** = how much entropy decreases after the split.
 • **Attention & Transformers** — let the model focus on relevant parts of the input
 • **Transfer Learning** — pre-train on large corpora, fine-tune on specific tasks
 
-**Responsible AI:** Consider transparency, interpretability, bias, and fairness in AI systems.`,
+**Responsible AI:** Consider transparency, interpretability, bias, and fairness in AI systems.
+
+**Regularization Comparison:**
+\`\`\`
+L2 Regularization:
+  Loss = MSE + λ Σ w²
+  Encourages small weights, smooth decision boundaries
+
+Dropout (p=0.5):
+  During training: randomly set 50% of neurons to 0
+  During inference: use all neurons, scale by 0.5
+  Forces redundancy, prevents co-adaptation
+
+Batch Normalization:
+  For each mini-batch: normalize → scale → shift
+  x_norm = (x - μ_batch) / σ_batch
+  output = γ × x_norm + β  (learnable γ, β)
+  Stabilizes training, allows higher learning rates
+\`\`\`
+
+**Exam Tips:**
+• Dropout: only during training, disable at test time
+• Batch norm: different behavior train vs test (running stats)
+• Transfer learning: freeze early layers, fine-tune later layers
+• Attention solves RNN's long-distance dependency problem
+• Transformer architecture: self-attention + positional encoding
+• Vanishing gradients: deep RNNs struggle; LSTMs/GRUs help`,
         viz: null
       }
     ]
@@ -451,7 +1640,69 @@ Use **Information Gain** = how much entropy decreases after the split.
 
 **Goal:** Find a **policy** π(s) → a that maps each state to the best action.
 
-**Value Iteration:** Repeatedly update V(s) = max_a [R(s) + γ Σ T(s,a,s')V(s')] until convergence. The optimal policy is then: pick the action that maximizes the right side.`,
+**Value Iteration:** Repeatedly update V(s) = max_a [R(s) + γ Σ T(s,a,s')V(s')] until convergence. The optimal policy is then: pick the action that maximizes the right side.
+
+**Python: Value Iteration**
+\`\`\`python
+def value_iteration(states, actions, T, R, gamma=0.9, theta=0.01):
+    V = {s: 0 for s in states}
+    while True:
+        delta = 0
+        for s in states:
+            v = V[s]
+            V[s] = max(R[s] + gamma * sum(T(s,a,sp) * V[sp]
+                       for sp in states) for a in actions)
+            delta = max(delta, abs(v - V[s]))
+        if delta < theta:
+            break
+
+    policy = {}
+    for s in states:
+        policy[s] = max(actions, key=lambda a:
+                        R[s] + gamma * sum(T(s,a,sp) * V[sp] for sp in states))
+    return V, policy
+\`\`\`
+
+**Value Iteration Trace:**
+\`\`\`
+3 states: s0, s1, s2
+Actions: Left, Right
+R(s0)=0, R(s1)=1, R(s2)=10
+γ=0.9
+
+Transition T(s,a,s'):
+  s0 --Right--> 0.8→s1, 0.2→s0
+  s1 --Right--> 0.9→s2, 0.1→s1
+  ...
+
+Iteration 0: V=[0, 0, 0]
+
+Iteration 1:
+  V(s0) = max(R(s0) + 0.9[T*V]) = max(0, 0) = 0
+  V(s1) = max(1 + 0.9×0, ...) = 1
+  V(s2) = 10
+  V=[0, 1, 10]
+
+Iteration 2:
+  V(s0) = max(0 + 0.9(0.8×1 + 0.2×0), ...) = 0.72
+  V(s1) = max(1 + 0.9(0.9×10 + 0.1×1), ...) = 9.19
+  V(s2) = 10
+  V=[0.72, 9.19, 10]
+
+Converges to: V*=[8.1, 9.1, 10]
+Policy: π(s0)=Right, π(s1)=Right, π(s2)=any
+\`\`\`
+
+**Policy Iteration vs Value Iteration:**
+• **Value Iteration:** Update values, extract policy at end
+• **Policy Iteration:** Alternate policy evaluation + policy improvement
+• PI often converges in fewer iterations but each iteration more expensive
+
+**Exam Tips:**
+• Bellman equation: V*(s) = max_a [R(s) + γ Σ T(s,a,s')V*(s')]
+• Discount γ→1: far-sighted; γ→0: myopic
+• Q-learning learns Q(s,a) without knowing T or R (model-free)
+• Exploration vs exploitation: ε-greedy chooses random action with prob ε`,
         viz: "mdp"
       },
       {
@@ -464,7 +1715,45 @@ Instead of knowing the exact state, the agent maintains a **belief state** — a
 
 POMDPs are much harder to solve than MDPs (PSPACE-complete!). Practical approaches use approximations like point-based solvers.
 
-**Key insight:** Sometimes the best action is one that **reduces uncertainty** (information gathering) rather than directly pursuing the goal.`,
+**Key insight:** Sometimes the best action is one that **reduces uncertainty** (information gathering) rather than directly pursuing the goal.
+
+**POMDP Components:**
+\`\`\`
+Standard MDP: (S, A, T, R, γ)
+POMDP adds:
+• Observations O — what agent can perceive
+• Observation function Z(s,a,o) — P(observation o | took action a, landed in state s)
+
+Belief update (Bayes filter):
+  b'(s') = η × Z(s',a,o) × Σ T(s,a,s') × b(s)
+  where η normalizes to make b' a probability distribution
+\`\`\`
+
+**Simple Example: Tiger Problem**
+\`\`\`
+States: TigerLeft, TigerRight
+Actions: Listen, OpenLeft, OpenRight
+Observations: HearLeft, HearRight
+
+Listen: gets noisy observation (85% accurate)
+Open door: -100 if tiger, +10 if treasure
+
+Belief: b = [P(TigerLeft), P(TigerRight)] = [0.5, 0.5]
+
+Action: Listen → Observation: HearLeft
+Update belief:
+  P(TL | HearLeft) = 0.85 × 0.5 / normalizer ≈ 0.85
+  P(TR | HearLeft) = 0.15 × 0.5 / normalizer ≈ 0.15
+
+New belief [0.85, 0.15] → confidence increased!
+Best action now: OpenRight (low tiger probability)
+\`\`\`
+
+**Exam Tips:**
+• POMDP belief state is continuous (probability distribution)
+• Optimal policy maps beliefs to actions: π(b) → a
+• Information gathering actions reduce entropy of belief
+• PSPACE-complete: exponentially harder than MDP`,
         viz: null
       }
     ]
@@ -479,37 +1768,93 @@ const QUIZZES = {
     { q: "An admissible heuristic must:", o: ["Always overestimate", "Never overestimate", "Equal the true cost", "Be zero"], a: 1, e: "Admissible = optimistic. Never overestimates, guaranteeing A* finds optimal solution." },
     { q: "UCS is equivalent to which algorithm?", o: ["Bellman-Ford", "Floyd-Warshall", "Dijkstra's", "Prim's"], a: 2, e: "UCS expands lowest-cost node first using a priority queue — exactly Dijkstra's algorithm." },
     { q: "Time complexity of BFS with branching factor b, depth d?", o: ["O(b + d)", "O(b × d)", "O(b^d)", "O(d^b)"], a: 2, e: "BFS explores all nodes at each level: O(b^d) total nodes." },
+    { q: "DFS uses which data structure?", o: ["Queue (FIFO)", "Stack (LIFO)", "Priority Queue", "Deque"], a: 1, e: "DFS uses a stack (LIFO) — last in, first out — diving deep before backtracking." },
+    { q: "What is the space complexity of DFS?", o: ["O(b^d)", "O(b^m)", "O(bm)", "O(d)"], a: 2, e: "DFS stores one path from root to current node: O(bm) where b = branching factor, m = max depth." },
+    { q: "If A* uses h(n) = 0 for all nodes, it behaves like:", o: ["DFS", "BFS", "UCS", "Greedy Best-First"], a: 2, e: "With h(n)=0, f(n) = g(n) + 0 = g(n), which is exactly UCS — expand by cheapest path cost." },
+    { q: "Which search strategy is complete but NOT optimal?", o: ["BFS", "UCS", "DFS on finite graphs", "A* with admissible h"], a: 2, e: "DFS on finite graphs will find a solution (complete) but may find a deep/expensive one first (not optimal)." },
+    { q: "A consistent heuristic guarantees that A*:", o: ["Runs in O(n) time", "Never re-expands a node", "Uses no memory", "Finds all solutions"], a: 1, e: "Consistency (h(n) ≤ c(n,n') + h(n')) ensures f-values are non-decreasing along paths, so no re-expansion." },
+    { q: "Iterative Deepening DFS combines the advantages of:", o: ["BFS completeness + DFS memory", "UCS optimality + BFS speed", "A* heuristics + DFS depth", "Greedy speed + UCS cost"], a: 0, e: "IDS does repeated depth-limited DFS: BFS-like completeness/optimality with DFS-like O(bd) memory." },
+    { q: "What distinguishes Graph Search from Tree Search?", o: ["Uses a priority queue", "Tracks an explored set", "Always finds optimal solutions", "Uses heuristics"], a: 1, e: "Graph Search maintains an explored set to avoid revisiting states, preventing infinite loops in cyclic graphs." },
   ],
   1: [
     { q: "Main problem with basic hill climbing?", o: ["Too slow", "Gets stuck at local maxima", "Too much memory", "Can't handle continuous spaces"], a: 1, e: "Hill climbing always moves to a better neighbor, so it gets stuck at local maxima." },
     { q: "As temperature decreases in simulated annealing:", o: ["More random moves accepted", "Fewer bad moves accepted", "Algorithm restarts", "Step size increases"], a: 1, e: "As T drops, probability of accepting worse solutions decreases, search becomes greedy." },
     { q: "What does 'crossover' do in a genetic algorithm?", o: ["Randomly changes one individual", "Combines parts of two parents", "Selects the fittest", "Removes the weakest"], a: 1, e: "Crossover combines genetic material from two parents to create a child." },
     { q: "Acceptance probability for a worse solution in SA?", o: ["Always 0", "Always 1", "e^(ΔE/T)", "1/T"], a: 2, e: "Probability is e^(ΔE/T) where ΔE < 0. Higher T → higher acceptance." },
+    { q: "Random-restart hill climbing helps by:", o: ["Using a priority queue", "Trying many starting points", "Increasing step size", "Adding backtracking"], a: 1, e: "Multiple random starts increase the chance of landing near the global optimum." },
+    { q: "What is a 'plateau' in local search?", o: ["Global maximum", "Area where all neighbors have equal value", "Local minimum", "Area with no neighbors"], a: 1, e: "On a plateau, no neighbor is better so hill climbing stalls — all moves look equally good." },
+    { q: "In SA, what happens when T is very high?", o: ["Only improvements accepted", "Almost all moves accepted", "Algorithm terminates", "Only the best neighbor chosen"], a: 1, e: "At high T, e^(ΔE/T) ≈ 1 even for bad moves, so SA behaves like random walk — maximum exploration." },
+    { q: "What is the role of 'mutation' in GAs?", o: ["Combine two parents", "Maintain diversity in population", "Select best individuals", "Sort the population"], a: 1, e: "Mutation introduces random changes to prevent the population from converging too early on a suboptimal solution." },
+    { q: "Which cooling schedule guarantees finding the global optimum?", o: ["Linear", "Geometric", "Logarithmic", "Constant temperature"], a: 2, e: "Logarithmic cooling T = T₀/ln(t+1) guarantees convergence, but is too slow for practical use." },
+    { q: "In genetic algorithms, 'fitness' determines:", o: ["Mutation rate", "Which individuals reproduce", "Population size", "Number of generations"], a: 1, e: "Fitter individuals are more likely to be selected as parents, passing their traits to the next generation." },
+    { q: "At T=0 in simulated annealing, the algorithm behaves like:", o: ["Random walk", "Hill climbing", "BFS", "Genetic algorithm"], a: 1, e: "At T=0, e^(ΔE/0) = 0 for any worse move, so only improvements are accepted — exactly hill climbing." },
+    { q: "A 'ridge' problem in hill climbing means:", o: ["Solution is at the bottom", "Narrow peak where no single step improves", "Too many neighbors", "Search space is flat"], a: 1, e: "A ridge is a narrow elevated region where moving in any single dimension goes downhill, but diagonal moves would help." },
   ],
   2: [
     { q: "In Minimax, the MAX player tries to:", o: ["Minimize score", "Maximize score", "Reach a draw", "Minimize depth"], a: 1, e: "MAX wants highest payoff; MIN tries to minimize it." },
-    { q: "Alpha-beta pruning best case reduces branching to:", o: ["b/2", "√b", "b²", "log(b)"], a: 1, e: "Perfect move ordering: O(b^(m/2)) nodes — square root of branching factor." },
-    { q: "When does alpha-beta pruning occur?", o: ["α < β", "α ≥ β", "α = 0", "β = 0"], a: 1, e: "When α ≥ β, the branch can't affect the final decision." },
-    { q: "The horizon effect occurs when:", o: ["Tree is too wide", "Limited depth hides inevitable outcomes", "Eval function is perfect", "Pruning is too aggressive"], a: 1, e: "Limited depth can push bad outcomes beyond the search horizon." },
-    { q: "In Expectimax, chance nodes compute:", o: ["Maximum of children", "Minimum of children", "Weighted average", "Median"], a: 2, e: "Chance nodes compute expected value — weighted average over outcomes." },
+    { q: "Alpha-beta pruning best case reduces branching to:", o: ["b/2", "√b", "b²", "log(b)"], a: 1, e: "Perfect move ordering: O(b^(m/2)) nodes — square root of branching factor effectively doubles searchable depth." },
+    { q: "When does alpha-beta pruning occur?", o: ["α < β", "α ≥ β", "α = 0", "β = 0"], a: 1, e: "When α ≥ β, the branch can't affect the final decision — prune remaining children." },
+    { q: "The horizon effect occurs when:", o: ["Tree is too wide", "Limited depth hides inevitable outcomes", "Eval function is perfect", "Pruning is too aggressive"], a: 1, e: "Limited depth can push bad outcomes beyond the search horizon — the AI delays but can't avoid them." },
+    { q: "In Expectimax, chance nodes compute:", o: ["Maximum of children", "Minimum of children", "Weighted average", "Median"], a: 2, e: "Chance nodes compute expected value — weighted average over outcomes based on probabilities." },
+    { q: "Does alpha-beta pruning change the minimax result?", o: ["Yes, it finds better moves", "No, same result with less work", "Only with good ordering", "Only at shallow depths"], a: 1, e: "Alpha-beta always returns the same value as minimax — it just skips branches that can't change the outcome." },
+    { q: "Alpha (α) is updated at which type of node?", o: ["MIN nodes", "MAX nodes", "Chance nodes", "All nodes"], a: 1, e: "α tracks the best value MAX can guarantee. It's updated at MAX nodes when a better child is found." },
+    { q: "What is quiescent search?", o: ["Searching quietly", "Extending search past noisy positions", "Searching with no heuristic", "Limiting search depth"], a: 1, e: "Quiescent search extends evaluation past 'noisy' positions (captures, checks) to avoid misjudging volatile states." },
+    { q: "Iterative deepening in game trees provides:", o: ["Optimal pruning", "Anytime best move + better move ordering", "Infinite depth search", "Lower memory usage"], a: 1, e: "ID always has a best-move-so-far ready when time runs out, and previous iterations help order moves for better pruning." },
+    { q: "Why can't alpha-beta pruning be used with Expectimax?", o: ["Too slow", "Chance nodes need all children for expected value", "No MIN nodes exist", "Pruning always helps"], a: 1, e: "Chance nodes must evaluate ALL children to compute the weighted average — you can't skip any." },
+    { q: "Time complexity of Minimax with branching factor b and depth m?", o: ["O(b + m)", "O(b × m)", "O(b^m)", "O(m^b)"], a: 2, e: "Minimax explores every node in the game tree: b children at each of m levels = O(b^m) total nodes." },
+    { q: "An evaluation function is used when:", o: ["The game has no rules", "We can't search to terminal states", "The tree is too shallow", "We have perfect information"], a: 1, e: "Eval functions estimate position quality at non-terminal nodes when search must stop before reaching the end of the game." },
   ],
   3: [
     { q: "Three main components of a CSP?", o: ["Nodes, Edges, Weights", "Variables, Domains, Constraints", "States, Actions, Rewards", "Inputs, Outputs, Layers"], a: 1, e: "CSP = Variables + Domains + Constraints." },
     { q: "Forward checking does what after assignment?", o: ["Backtracks", "Removes inconsistent values from neighbors", "Assigns all remaining", "Changes constraints"], a: 1, e: "Forward checking removes values from neighbors' domains that violate constraints." },
     { q: "MRV heuristic chooses:", o: ["Most legal values", "Fewest legal values", "Most constraints", "Random variable"], a: 1, e: "MRV picks the most constrained variable — 'fail-first' strategy." },
     { q: "Arc consistency ensures:", o: ["All assigned", "Every value has a compatible neighbor value", "Solution is unique", "No backtracking needed"], a: 1, e: "Each value in one domain must have a compatible value in constrained neighbor's domain." },
+    { q: "After forward checking detects an empty domain, the algorithm should:", o: ["Continue assigning", "Backtrack immediately", "Try AC-3", "Reset all domains"], a: 1, e: "Empty domain means no valid assignment possible — backtrack to try different value." },
+    { q: "AC-3 maintains consistency by:", o: ["Checking only assigned variables", "Checking all pairs of constrained variables", "Only checking neighbors", "Random constraint checks"], a: 1, e: "AC-3 uses a queue to propagate constraints across all arcs in the constraint graph." },
+    { q: "When multiple variables have the same MRV count, which tie-breaker is best?", o: ["Random selection", "Alphabetical order", "Degree heuristic (most constraints)", "Least constraining value"], a: 2, e: "Degree heuristic picks the variable involved in most constraints on remaining unassigned variables." },
+    { q: "LCV (Least Constraining Value) heuristic chooses values that:", o: ["Rule out fewest options for neighbors", "Have been tried least", "Are smallest numerically", "Appear first in domain"], a: 0, e: "LCV tries the value that leaves the most flexibility for neighboring variables." },
+    { q: "Backtracking without any heuristics has time complexity:", o: ["O(n)", "O(n²)", "O(d^n)", "O(n×d)"], a: 2, e: "In worst case, try all d values for each of n variables: O(d^n) — exponential!" },
+    { q: "Forward checking is:", o: ["More powerful than AC-3", "Less powerful than AC-3", "Equivalent to AC-3", "Unrelated to AC-3"], a: 1, e: "FC only checks direct neighbors of assigned var. AC-3 propagates further through constraint graph." },
+    { q: "In CSP, backtracking is guaranteed to:", o: ["Find optimal solution", "Find a solution if one exists", "Run in polynomial time", "Never revisit states"], a: 1, e: "Backtracking is complete for CSPs — will find solution if one exists (or prove none exist)." },
+    { q: "Which is NOT a valid CSP solving approach?", o: ["Backtracking with FC", "Min-conflicts local search", "AC-3 preprocessing", "A* search"], a: 3, e: "A* is for pathfinding, not CSPs. CSPs use backtracking, local search, or constraint propagation." },
+    { q: "Min-conflicts local search for CSPs:", o: ["Always finds solution", "Can get stuck in local minima", "Slower than backtracking", "Requires arc consistency"], a: 1, e: "Local search like min-conflicts can get stuck and may not find solution even if one exists." },
+    { q: "A constraint graph where each node connects to k others has induced width:", o: ["Always k", "At most k", "At least k", "k²"], a: 1, e: "Induced width depends on elimination order, bounded by max clique size (at most k for k-connected graph)." },
+    { q: "Which CSP structure allows tree-search algorithms to run in O(n·d²)?", o: ["Complete graphs", "Trees", "Dense graphs", "Cyclic graphs"], a: 1, e: "Tree-structured CSPs can be solved in linear time (O(n·d²)) using topological ordering." },
+    { q: "Constraint propagation differs from backtracking search in that it:", o: ["Never assigns variables", "Prunes domains before/during search", "Only works on binary CSPs", "Requires a heuristic"], a: 1, e: "Propagation (like AC-3) removes inconsistent values from domains, narrowing search space." },
   ],
   4: [
     { q: "If P(A) = 0.3, what is P(¬A)?", o: ["0.3", "0.7", "0.09", "1.3"], a: 1, e: "P(¬A) = 1 - P(A) = 0.7" },
     { q: "Bayes' Rule: P(A|B) equals:", o: ["P(B|A) × P(A)", "P(B|A) × P(A) / P(B)", "P(A) × P(B)", "P(A) + P(B)"], a: 1, e: "Bayes' Rule: P(A|B) = P(B|A) × P(A) / P(B)." },
     { q: "Events A and B are independent if:", o: ["P(A ∧ B) = 0", "P(A|B) = P(A)", "P(A) + P(B) = 1", "P(A|B) = P(B|A)"], a: 1, e: "Independence: knowing B gives no info about A." },
     { q: "Positive cancer test but low P(cancer) because:", o: ["Test unreliable", "Base rate is very low", "Bayes doesn't apply", "No false positives"], a: 1, e: "Low prior overwhelms test accuracy — the base rate fallacy." },
+    { q: "If P(A|B) = 0.6 and P(B) = 0.5, what is P(A ∧ B)?", o: ["0.11", "0.3", "1.1", "0.6"], a: 1, e: "P(A ∧ B) = P(A|B) × P(B) = 0.6 × 0.5 = 0.3" },
+    { q: "The chain rule of probability states:", o: ["P(A,B) = P(A) + P(B)", "P(A,B) = P(A|B)×P(B)", "P(A,B) = P(A)×P(B)", "P(A,B) = P(A)/P(B)"], a: 1, e: "Chain rule: P(A,B) = P(A|B)×P(B) = P(B|A)×P(A). Generalizes to any number of variables." },
+    { q: "Marginalization computes P(A) by:", o: ["P(A) = max_b P(A,b)", "P(A) = Σ_b P(A,b)", "P(A) = P(A,b)/P(b)", "P(A) = 1 - P(¬A)"], a: 1, e: "Marginalization sums over all values: P(A) = Σ_b P(A,B=b)." },
+    { q: "If A and B are independent, then P(A ∧ B) equals:", o: ["P(A) + P(B)", "P(A) × P(B)", "P(A|B)", "P(A) - P(B)"], a: 1, e: "Independence means P(A ∧ B) = P(A) × P(B) — probabilities multiply." },
+    { q: "Total probability theorem: P(A) = ?", o: ["Σ P(A|B_i)", "Σ P(A|B_i)×P(B_i)", "Σ P(B_i|A)", "P(A|B)×P(B)"], a: 1, e: "Total prob: P(A) = Σ_i P(A|B_i)×P(B_i) where B_i partition the space." },
+    { q: "Conditional independence P(A⊥B|C) means:", o: ["P(A|C) = P(B|C)", "P(A|B,C) = P(A|C)", "P(A,B,C) = 0", "P(A|C) = 0"], a: 1, e: "Conditionally independent given C: P(A|B,C) = P(A|C). Knowing B doesn't help once you know C." },
+    { q: "If P(Rain) = 0.3 and P(Traffic|Rain) = 0.8, P(Traffic|¬Rain) = 0.2, find P(Traffic):", o: ["0.5", "0.38", "0.24", "0.8"], a: 1, e: "Total prob: P(T) = 0.8×0.3 + 0.2×0.7 = 0.24 + 0.14 = 0.38" },
+    { q: "In the cancer test, why is P(C|+) so low despite high test accuracy?", o: ["Math error", "Test is useless", "Low base rate P(C)", "High false negative"], a: 2, e: "Base rate fallacy: P(C)=1% is so low that even accurate tests produce many false positives." },
+    { q: "If P(A)=0.4, P(B)=0.5, P(A∧B)=0.3, are A and B independent?", o: ["Yes", "No", "Not enough info", "Only if P(A|B)=P(B)"], a: 1, e: "No! If independent, P(A∧B) should equal P(A)×P(B) = 0.4×0.5 = 0.2 ≠ 0.3" },
+    { q: "Normalizing probabilities means:", o: ["Subtracting mean", "Scaling so they sum to 1", "Setting largest to 1", "Dividing by variance"], a: 1, e: "Normalization scales values so Σ P(X=x) = 1, ensuring valid probability distribution." },
+    { q: "Which is TRUE about joint distributions?", o: ["Always independent", "Encode all correlations", "Simpler than conditionals", "Only for binary vars"], a: 1, e: "Joint P(A,B,...,Z) contains complete information about all correlations and dependencies." },
+    { q: "For three events, the chain rule gives P(A,B,C) as:", o: ["P(A)×P(B)×P(C)", "P(A|B,C)×P(B|C)×P(C)", "P(A)+P(B)+P(C)", "P(A|B)×P(B)"], a: 1, e: "Chain rule: P(A,B,C) = P(A|B,C)×P(B|C)×P(C) — condition each on all previous." },
   ],
   5: [
     { q: "In a Bayes Net, each node depends only on:", o: ["All other nodes", "Its parent nodes", "Its child nodes", "Sibling nodes"], a: 1, e: "Each variable is conditionally independent of non-descendants given parents." },
     { q: "In collider A → C ← B, when C is observed:", o: ["A,B become independent", "A,B become dependent", "Always independent", "C becomes independent"], a: 1, e: "Observing collider C 'opens' the path — explaining away." },
     { q: "In chain A → B → C, A and C independent given B?", o: ["Yes — B blocks flow", "No — always dependent", "Only if B unobserved", "Depends on CPT"], a: 0, e: "Observing B d-separates A from C, blocking information flow." },
     { q: "Variable elimination improves on enumeration by:", o: ["Random sampling", "Reusing intermediate computations", "Ignoring hidden vars", "Only MAP estimates"], a: 1, e: "VE avoids redundant computation by combining and marginalizing factors smartly." },
+    { q: "In fork A ← C → B, when is the path active?", o: ["Always", "Only when C observed", "Only when C NOT observed", "Never"], a: 2, e: "Fork is active (dependent) when common cause C is unobserved. Observing C blocks the path." },
+    { q: "The Markov blanket of a node consists of:", o: ["Only parents", "Parents + children", "Parents + children + children's other parents", "All neighbors"], a: 2, e: "Markov blanket = parents + children + spouses (other parents of children). Node independent of all else given blanket." },
+    { q: "Observing a descendant of a collider:", o: ["Blocks the path", "Opens the path like observing the collider", "Has no effect", "Makes all nodes independent"], a: 1, e: "Observing a descendant of a collider activates explaining away — same effect as observing the collider itself." },
+    { q: "A Bayes Net represents which factorization?", o: ["P = Σ P(Xᵢ)", "P = Π P(Xᵢ|Parents(Xᵢ))", "P = Π P(Xᵢ)", "P = max P(Xᵢ)"], a: 1, e: "Joint = product of local CPTs: P(X₁,...,Xₙ) = Π P(Xᵢ|Parents(Xᵢ))." },
+    { q: "Rejection sampling rejects a sample when:", o: ["Probability too low", "Evidence doesn't match", "Cycle detected", "Domain too large"], a: 1, e: "Rejection sampling discards samples that don't match the observed evidence values." },
+    { q: "Likelihood weighting improves on rejection by:", o: ["Using MCMC", "Fixing evidence and weighting samples", "Fewer variables", "No normalization needed"], a: 1, e: "LW fixes evidence vars to observed values and weights by P(evidence), avoiding wasteful rejection." },
+    { q: "In Gibbs sampling, each iteration resamples:", o: ["All variables at once", "One variable given its Markov blanket", "Evidence variables", "Root nodes only"], a: 1, e: "Gibbs resamples one non-evidence variable at a time conditioned on current values of its Markov blanket." },
+    { q: "Variable elimination complexity depends mainly on:", o: ["Number of nodes", "Elimination order", "Number of edges", "CPT size alone"], a: 1, e: "Bad elimination order → huge intermediate factors. Good order can be exponentially faster!" },
+    { q: "Which inference method is exact?", o: ["Rejection sampling", "Likelihood weighting", "Variable elimination", "Gibbs sampling"], a: 2, e: "Variable elimination (and enumeration) are exact. Sampling methods are approximate." },
+    { q: "Explaining away is best described as:", o: ["Common cause explains children", "Competing causes become anti-correlated given shared effect", "Effects cause parents", "Independent causes stay independent"], a: 1, e: "When a shared effect is observed, knowing one cause makes others less likely — competing explanations." },
   ],
   6: [
     { q: "In kNN, as k increases:", o: ["Boundary more complex", "Boundary smoother", "Training slower", "Distance metric changes"], a: 1, e: "Larger k = more voters = smoother, less complex boundary." },
@@ -517,24 +1862,63 @@ const QUIZZES = {
     { q: "Information Gain measures:", o: ["Tree accuracy", "Entropy reduction after split", "Tree depth", "Features used"], a: 1, e: "IG = Entropy(parent) - weighted Entropy(children)." },
     { q: "A single perceptron CANNOT learn:", o: ["AND", "OR", "XOR", "NOT"], a: 2, e: "XOR isn't linearly separable — no single line can separate the examples." },
     { q: "Backpropagation works by:", o: ["Random weight adjustment", "Propagating errors backward via gradient descent", "Adding layers", "Removing neurons"], a: 1, e: "Backprop computes gradients via chain rule and updates weights." },
+    { q: "Why must kNN features be normalized?", o: ["Speeds up computation", "Prevents features with large ranges from dominating distance", "Required by algorithm", "Reduces memory"], a: 1, e: "Without normalization, a feature with range [0,1000] dominates one with range [0,1] in Euclidean distance." },
+    { q: "Laplace smoothing in Naive Bayes:", o: ["Removes outliers", "Prevents zero probabilities", "Speeds up training", "Increases accuracy"], a: 1, e: "Add 1 to all counts to avoid P(feature|class)=0, which would make entire posterior zero." },
+    { q: "Entropy of a pure node (all same class):", o: ["1", "0", "0.5", "Infinity"], a: 1, e: "H = -1×log₂(1) = 0. No uncertainty when all examples are same class." },
+    { q: "Overfitting vs underfitting in ML:", o: ["Both mean low training error", "Overfitting: high train accuracy, low test; Underfitting: low both", "Both mean high test error", "Overfitting always better"], a: 1, e: "Overfitting: model memorizes training data. Underfitting: model too simple to capture patterns." },
+    { q: "Cross-validation is used to:", o: ["Speed up training", "Select hyperparameters and estimate generalization", "Reduce overfitting", "Increase dataset size"], a: 1, e: "Split data into folds, train on some and validate on others to tune hyperparameters like k in kNN." },
+    { q: "Bias-variance tradeoff:", o: ["High bias = overfitting", "High variance = underfitting", "High bias = underfitting, high variance = overfitting", "Unrelated concepts"], a: 2, e: "Bias: error from wrong assumptions (underfitting). Variance: error from sensitivity to training data (overfitting)." },
+    { q: "Gradient descent learning rate too high:", o: ["Slow convergence", "Oscillation or divergence", "Perfect convergence", "No effect"], a: 1, e: "Large steps can overshoot minimum, causing loss to bounce around or increase." },
+    { q: "Why use log probabilities in Naive Bayes?", o: ["Faster computation", "Prevents numerical underflow", "Required by Bayes rule", "Improves accuracy"], a: 1, e: "Multiplying many small probabilities causes underflow. Log converts multiplication to addition: log(ab)=log(a)+log(b)." },
+    { q: "Random Forest reduces overfitting by:", o: ["Using single deep tree", "Averaging predictions from multiple trees on random subsets", "Pruning aggressively", "Using shallow trees only"], a: 1, e: "Bootstrap aggregating (bagging) + random feature subsets creates diverse trees; averaging reduces variance." },
   ],
   7: [
     { q: "Why is Euclidean distance bad for time series?", o: ["Too slow", "Can't handle different lengths", "Fails with time shifts", "Only works in 2D"], a: 2, e: "Point-by-point comparison fails when signals are shifted in time." },
     { q: "Viterbi algorithm finds:", o: ["Observation probability", "Most likely hidden state sequence", "Best model parameters", "Emission probabilities"], a: 1, e: "Viterbi uses DP to find the most likely state sequence." },
     { q: "Baum-Welch is used for:", o: ["Decoding states", "Computing observation probability", "Training HMM parameters", "Time warping"], a: 2, e: "Baum-Welch (EM) iteratively improves transition and emission probabilities." },
     { q: "HMM emission probabilities describe:", o: ["P(next state|current)", "P(observation|state)", "P(state|observation)", "P(starting state)"], a: 1, e: "Emission probs define how likely each observation is given the hidden state." },
+    { q: "DTW time complexity for sequences of length n and m:", o: ["O(n+m)", "O(n×m)", "O(n²)", "O(log n)"], a: 1, e: "DTW fills an n×m cost matrix, visiting each cell once: O(nm) time." },
+    { q: "Sakoe-Chiba band in DTW:", o: ["Speeds up by constraining warping path near diagonal", "Improves accuracy", "Handles different lengths", "Required for correctness"], a: 0, e: "Constrains path to window around diagonal, reducing complexity from O(nm) to O(nw) where w=width." },
+    { q: "Forward algorithm vs Viterbi in HMMs:", o: ["Forward sums paths; Viterbi finds max path", "Both find max path", "Forward finds max; Viterbi sums", "Identical algorithms"], a: 0, e: "Forward: P(obs|model) = sum over all paths. Viterbi: most likely single path using max instead of sum." },
+    { q: "HMM components include all EXCEPT:", o: ["Transition probabilities", "Emission probabilities", "Gradient descent", "Initial state distribution"], a: 2, e: "HMM has states, transitions, emissions, and initial probs. Gradient descent is a training method, not a component." },
+    { q: "Baum-Welch algorithm is a form of:", o: ["Gradient descent", "Expectation-Maximization (EM)", "Dynamic programming", "Greedy search"], a: 1, e: "Baum-Welch is EM for HMMs: E-step computes expected counts, M-step updates parameters." },
+    { q: "Markov assumption in HMMs:", o: ["All states equally likely", "Future state depends only on current state", "Observations independent", "No hidden states"], a: 1, e: "P(s_t+1 | s_1...s_t) = P(s_t+1 | s_t). Future depends only on present, not past history." },
+    { q: "DTW is asymmetric because:", o: ["Distance metric not symmetric", "Different path for dtw(A,B) vs dtw(B,A)", "Only works one direction", "Requires ordered sequences"], a: 1, e: "Warping path alignment can differ depending on which sequence is reference vs query." },
+    { q: "Forward algorithm complexity for T observations, N states:", o: ["O(T)", "O(N²)", "O(T×N²)", "O(2^T)"], a: 2, e: "For each time step (T), compute alpha for each state (N), summing over all previous states (N): O(TN²)." },
+    { q: "HMMs are useful for:", o: ["Static classification", "Sequence modeling (speech, DNA, gestures)", "Image recognition", "Clustering"], a: 1, e: "HMMs model temporal sequences where hidden states generate observable outputs over time." },
+    { q: "Difference between DTW and Euclidean distance:", o: ["DTW faster", "DTW allows temporal alignment; Euclidean point-to-point", "Euclidean more accurate", "No difference"], a: 1, e: "DTW warps time axis for best alignment. Euclidean rigidly compares corresponding indices." },
   ],
   8: [
     { q: "Advantage of conv layers over fully connected for images?", o: ["Faster training", "Parameter sharing — same filter everywhere", "No activations needed", "1D only"], a: 1, e: "Conv layers share filters, drastically reducing parameters." },
     { q: "Pooling layers in a CNN:", o: ["Add parameters", "Downsample feature maps", "Increase resolution", "Apply activation"], a: 1, e: "Pooling reduces spatial dimensions, adding translation invariance." },
     { q: "ResNets solve what problem?", o: ["Overfitting", "Vanishing gradients via skip connections", "Slow inference", "High memory"], a: 1, e: "Skip connections let gradients flow directly, enabling very deep networks." },
     { q: "Dropout works by:", o: ["Removing layers", "Randomly zeroing neurons during training", "Reducing learning rate", "Adding input noise"], a: 1, e: "Dropout deactivates random neurons, preventing co-adaptation." },
+    { q: "CNN output size with stride s, padding p, kernel k, input n:", o: ["(n-k)/s+1", "(n-k+2p)/s+1", "n/s", "n-k"], a: 1, e: "Output = (input - kernel + 2×padding) / stride + 1. Example: (32-3+2)/1+1 = 32 (same size with p=1)." },
+    { q: "Batch normalization purpose:", o: ["Add noise", "Normalize layer inputs for stable training", "Reduce parameters", "Replace activation functions"], a: 1, e: "BN normalizes inputs to each layer, reducing internal covariate shift and allowing higher learning rates." },
+    { q: "Transfer learning in deep learning:", o: ["Train from scratch always", "Use pretrained model, fine-tune on new task", "Only for small datasets", "Requires same output classes"], a: 1, e: "Pretrain on large dataset (ImageNet), freeze early layers, fine-tune later layers for specific task." },
+    { q: "Attention mechanism allows models to:", o: ["Train faster", "Focus on relevant parts of input", "Use less memory", "Avoid overfitting"], a: 1, e: "Attention learns weights to focus on important input elements, crucial for seq2seq and transformers." },
+    { q: "ReLU activation advantage over sigmoid:", o: ["Always positive", "Avoids vanishing gradient problem", "More complex", "Slower"], a: 1, e: "ReLU: f(x)=max(0,x). Gradient is 1 for x>0, avoiding saturation unlike sigmoid which saturates at 0 and 1." },
+    { q: "Vanishing gradient problem occurs when:", o: ["Learning rate too high", "Gradients become extremely small in deep networks", "Too much data", "Overfitting"], a: 1, e: "In deep networks with sigmoid/tanh, gradients multiply through layers, shrinking exponentially. ReLU and ResNets help." },
+    { q: "Difference between L1 and L2 regularization:", o: ["L1 creates sparse weights; L2 small weights", "L1 always better", "L2 creates sparsity", "No difference"], a: 0, e: "L1: |w| penalty encourages exact zeros (sparsity). L2: w² penalty encourages small weights but rarely exactly zero." },
+    { q: "Convolutional layer parameters for 64 filters, 3×3, input depth 32:", o: ["64×3×3=576", "64×(3×3×32+1)=18,496", "3×3×32=288", "64×32=2,048"], a: 1, e: "Each filter: 3×3×32 weights + 1 bias = 289. Total: 64 filters × 289 = 18,496 parameters." },
+    { q: "Pooling vs strided convolution:", o: ["Pooling has parameters; strided conv doesn't", "Both downsample; pooling no params, strided conv has params", "Identical", "Pooling slower"], a: 1, e: "Max/avg pooling downsamples with no learnable params. Strided conv downsamples while learning filters." },
+    { q: "Word2Vec learns:", o: ["Word frequencies", "Dense vector representations where similar words are close", "Grammar rules", "Sentence structure"], a: 1, e: "Word2Vec embeds words in continuous space such that semantic/syntactic similarity reflects geometric proximity." },
   ],
   9: [
     { q: "In an MDP, a policy π(s) maps:", o: ["Actions to states", "States to actions", "States to rewards", "Actions to rewards"], a: 1, e: "A policy tells the agent what action to take in each state." },
     { q: "Discount factor γ controls:", o: ["Transition probs", "How much future rewards are valued", "Number of states", "Exploration rate"], a: 1, e: "γ determines present value of future rewards. γ→1 = long-term thinking." },
     { q: "Value Iteration converges by:", o: ["Random exploration", "Repeatedly applying Bellman equation", "Gradient descent", "Monte Carlo"], a: 1, e: "VI repeatedly applies V(s) = max_a [R(s) + γ Σ T(s,a,s')V(s')]." },
     { q: "In a POMDP, the agent maintains a:", o: ["Complete state", "Belief state (probability distribution)", "Single guess", "Action history"], a: 1, e: "Agent can't see true state, so maintains a belief distribution." },
+    { q: "Bellman equation for optimal value function:", o: ["V(s) = R(s)", "V*(s) = max_a [R(s) + γ Σ T(s,a,s')V*(s')]", "V(s) = sum of all rewards", "V(s) = γ×R(s)"], a: 1, e: "Optimal value: immediate reward R(s) plus discounted expected value of next states, maximizing over actions." },
+    { q: "Policy Iteration vs Value Iteration:", o: ["Identical algorithms", "PI alternates evaluation/improvement; VI updates values directly", "PI always slower", "VI can't find optimal policy"], a: 1, e: "PI: evaluate policy, improve policy, repeat. VI: update all values, extract policy at end. PI often fewer iterations." },
+    { q: "Q-learning is:", o: ["Model-based", "Model-free: learns Q(s,a) without knowing T or R", "Requires full MDP specification", "Only for deterministic environments"], a: 1, e: "Q-learning learns action values from experience without transition/reward models: Q(s,a) ← Q(s,a) + α[r + γ max Q(s',a') - Q(s,a)]." },
+    { q: "Exploration vs exploitation tradeoff:", o: ["Only explore", "Only exploit", "Balance trying new actions vs using best known action", "Unimportant in RL"], a: 2, e: "Exploration: try unknown actions to discover better options. Exploitation: use best known action. ε-greedy balances both." },
+    { q: "ε-greedy strategy:", o: ["Always pick best action", "Pick random action with prob ε, best action with prob 1-ε", "Pick worst action sometimes", "Requires gradient"], a: 1, e: "With probability ε, explore by choosing random action. Otherwise, exploit by choosing argmax Q(s,a)." },
+    { q: "Discount factor γ=0 means:", o: ["Ignore all rewards", "Only care about immediate reward", "Care about all future rewards equally", "Invalid MDP"], a: 1, e: "γ=0: V(s) = R(s), agent myopic. γ→1: agent far-sighted, values distant rewards." },
+    { q: "Model-based vs model-free RL:", o: ["Model-based learns T,R; model-free learns values directly", "Both identical", "Model-free always better", "Model-based doesn't use rewards"], a: 0, e: "Model-based: learn transition T(s,a,s') and reward R, then plan. Model-free: learn values/policy from experience without model." },
+    { q: "POMDP complexity compared to MDP:", o: ["Same", "POMDP easier", "POMDP much harder (PSPACE-complete)", "Only MDP solvable"], a: 2, e: "POMDP belief state is continuous probability distribution, exponentially harder than MDP's discrete states." },
+    { q: "Q-learning update rule:", o: ["Q(s,a) = R(s)", "Q(s,a) ← (1-α)Q(s,a) + α[r + γ max Q(s',a')]", "Q(s,a) ← r", "Q(s,a) ← γQ(s,a)"], a: 1, e: "Temporal difference update: old value (1-α)Q + learning rate α × [observed r + discounted max future Q]." },
+    { q: "Value function V(s) vs Q-function Q(s,a):", o: ["V is state value; Q is state-action value", "Identical", "Q always larger", "V for POMDP only"], a: 0, e: "V(s): expected return from state s. Q(s,a): expected return from state s taking action a. V(s)=max_a Q(s,a)." },
   ],
 };
 
@@ -1581,6 +2965,27 @@ const vizComponents = {
   "mdp": MDPViz,
 };
 
+// ============== COLLAPSIBLE CODE BLOCK ==============
+function CollapsibleCode({ lang, code }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="my-2 rounded-lg overflow-hidden" style={{ background: '#1e1e2e', border: '1px solid #313244' }}>
+      <button
+        onClick={() => setOpen(!open)}
+        style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 12px', fontSize: 11, color: '#a6adc8', background: '#181825', border: 'none', cursor: 'pointer', fontFamily: "'JetBrains Mono', monospace" }}
+      >
+        <span>{lang ? `${lang}` : 'code'}</span>
+        <span style={{ fontSize: 10, opacity: 0.7 }}>{open ? '▲ collapse' : '▼ expand'}</span>
+      </button>
+      {open && (
+        <pre style={{ padding: '12px', margin: 0, fontSize: 11.5, lineHeight: 1.5, color: '#cdd6f4', fontFamily: "'JetBrains Mono', 'Fira Code', monospace", overflowX: 'auto', whiteSpace: 'pre' }}>
+          <code>{code}</code>
+        </pre>
+      )}
+    </div>
+  );
+}
+
 // ============== MAIN APP ==============
 export default function CS6601App() {
   const [activeModule, setActiveModule] = useState(0);
@@ -1641,14 +3046,27 @@ export default function CS6601App() {
   const isAtEnd = activeModule === MODULES.length - 1 && (showQuiz || (!hasQuiz && activeSection === mod.sections.length - 1));
 
   const renderMarkdown = (text) => {
-    return text.split('\n').map((line, i) => {
-      line = line.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-      line = line.replace(/\*(.+?)\*/g, '<em>$1</em>');
-      if (line.startsWith('•')) {
-        return <div key={i} className="pl-3 py-0.5 text-sm leading-relaxed" dangerouslySetInnerHTML={{ __html: line }} />;
+    // Split by code blocks first, then process each part
+    const parts = text.split(/(```[\s\S]*?```)/g);
+
+    return parts.map((part, partIdx) => {
+      if (part.startsWith('```')) {
+        const lines = part.split('\n');
+        const lang = lines[0].replace('```', '').trim();
+        const code = lines.slice(1, -1).join('\n');
+        return <CollapsibleCode key={partIdx} lang={lang} code={code} />;
       }
-      if (line.trim() === '') return <div key={i} className="h-2" />;
-      return <p key={i} className="text-sm leading-relaxed" dangerouslySetInnerHTML={{ __html: line }} />;
+
+      return part.split('\n').map((line, i) => {
+        line = line.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+        line = line.replace(/\*(.+?)\*/g, '<em>$1</em>');
+        line = line.replace(/`([^`]+)`/g, '<code style="background:#e8e8e4;padding:1px 5px;border-radius:3px;font-size:12px;font-family:monospace">$1</code>');
+        if (line.startsWith('•')) {
+          return <div key={`${partIdx}-${i}`} className="pl-3 py-0.5 text-sm leading-relaxed" dangerouslySetInnerHTML={{ __html: line }} />;
+        }
+        if (line.trim() === '') return <div key={`${partIdx}-${i}`} className="h-2" />;
+        return <p key={`${partIdx}-${i}`} className="text-sm leading-relaxed" dangerouslySetInnerHTML={{ __html: line }} />;
+      });
     });
   };
 
